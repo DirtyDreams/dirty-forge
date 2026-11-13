@@ -51,6 +51,7 @@ def register(ctx: Any) -> None:
         ("dirty_forge_fit_test", schemas.FIT_TEST, tools.fit_test, "🧭", "Run 5-question Fit Test before creating a Bot", False),
         ("dirty_forge_create_bot", schemas.CREATE_BOT, tools.create_bot, "🧪", "Provision a complete Hermes Bot profile", True),
         ("dirty_forge_eval_bot", schemas.EVAL_BOT, tools.eval_bot, "✅", "Run pass/fail evaluation gate on a Bot", False),
+        ("dirty_forge_activate_bot", schemas.ACTIVATE_BOT, tools.activate_bot, "🚀", "Activate draft cron routines after eval_bot passes", False),
         ("dirty_forge_create_team", schemas.CREATE_TEAM, tools.create_team, "🧬", "Build a team of Bots with a lead", True),
         ("dirty_forge_list_bots", schemas.LIST_BOTS, tools.list_bots, "📋", "List Hermes Bots on this machine", False),
         ("dirty_forge_update_bot", schemas.UPDATE_BOT, tools.update_bot, "✏️", "Update an existing Bot", False),
@@ -88,7 +89,22 @@ def register(ctx: Any) -> None:
     ctx.register_hook("post_llm_call", marks.on_turn_end)
 
     skills_dir = Path(__file__).parent / "skills"
-    if skills_dir.is_dir() and hasattr(ctx, "register_skill"):
+    if skills_dir.is_dir():
         for child in sorted(skills_dir.iterdir()):
-            if child.is_dir() and (child / "SKILL.md").is_file():
-                ctx.register_skill(child.name, child / "SKILL.md")
+            skill_md = child / "SKILL.md"
+            if not (child.is_dir() and skill_md.is_file()):
+                continue
+            if hasattr(ctx, "register_skill"):
+                ctx.register_skill(child.name, skill_md)
+            else:
+                from . import forge
+
+                target_dir = forge.default_root() / "skills" / child.name
+                try:
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    target_file = target_dir / "SKILL.md"
+                    src_text = skill_md.read_text(encoding="utf-8")
+                    if not target_file.is_file() or target_file.read_text(encoding="utf-8") != src_text:
+                        target_file.write_text(src_text, encoding="utf-8")
+                except OSError:
+                    pass

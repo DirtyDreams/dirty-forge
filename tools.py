@@ -70,8 +70,15 @@ def check_bots(args: dict[str, Any], **kwargs: Any) -> str:
 
 def agent_journal(args: dict[str, Any], **kwargs: Any) -> str:
     action = str((args or {}).get("action") or "").strip().lower()
-    target = str((args or {}).get("name") or os.environ.get("HERMES_PROFILE") or "default").strip()
-    pdir = forge.profile_dir(forge.default_root(), forge.slugify_profile(target) if target != "default" else "default")
+    caller = os.environ.get("HERMES_PROFILE", "").strip().lower()
+    target = str((args or {}).get("name") or caller or "default").strip()
+    ok_id, pid_or_err = forge.validate_profile_id(target, allow_default=True)
+    if not ok_id:
+        return _json({"ok": False, "error": pid_or_err})
+    target_pid = pid_or_err
+    if action == "write" and caller and caller != "default" and target_pid != caller:
+        return _json({"ok": False, "error": f"cross-bot journal writes are forbidden (caller '{caller}' cannot write to '{target_pid}')"})
+    pdir = forge.profile_dir(forge.default_root(), target_pid)
     if not pdir.is_dir():
         return _json({"ok": False, "error": f"profile '{target}' not found"})
     if action == "write":
@@ -221,5 +228,14 @@ def eval_bot(args: dict[str, Any], **kwargs: Any) -> str:
         evals.eval_bot(
             name=str((args or {}).get("name") or ""),
             cases=list((args or {}).get("cases") or []),
+        )
+    )
+
+
+def activate_bot(args: dict[str, Any], **kwargs: Any) -> str:
+    return _json(
+        forge.activate_bot(
+            name=str((args or {}).get("name") or ""),
+            force=bool((args or {}).get("force", False)),
         )
     )

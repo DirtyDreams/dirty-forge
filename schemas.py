@@ -285,3 +285,16 @@ EVAL_BOT = {
         "required": ["name", "cases"],
     },
 }
+
+ACTIVATE_BOT = {
+    "name": "dirty_forge_activate_bot",
+    "description": "Enable draft cron routines for a Bot after eval_bot passes (100% pass rate), unless force=true.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Bot profile name."},
+            "force": {"type": "boolean", "description": "Bypass the eval_bot 100% pass requirement (default false)."},
+        },
+        "required": ["name"],
+    },
+}

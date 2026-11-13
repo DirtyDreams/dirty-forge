@@ -24,7 +24,13 @@ def _read_config(ctx: Any, key: str, default: Any = None) -> Any:
 
 
 def register(ctx: Any) -> None:
-    def on_pre_tool_call(tool_name: str = "", arguments: dict[str, Any] | None = None, **kwargs: Any):
+    def on_pre_tool_call(
+        tool_name: str = "",
+        args: dict[str, Any] | None = None,
+        arguments: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ):
+        effective_args = args if args is not None else arguments
         policy = _read_config(ctx, "sentinel_policy", default=None)
         if policy is None:
             policy = {
@@ -33,6 +39,6 @@ def register(ctx: Any) -> None:
                 "block": _read_config(ctx, "block", default=[]),
                 "limits": _read_config(ctx, "limits", default={}),
             }
-        return guard.evaluate(tool_name, arguments, policy)
+        return guard.evaluate(tool_name, effective_args, policy)
 
     ctx.register_hook("pre_tool_call", on_pre_tool_call)

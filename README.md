@@ -33,6 +33,7 @@ hermes dirty-forge-doctor
 | `dirty_forge_search_blueprints` | Search 279 specialist blueprints + retrieve `SOUL.md` metaprompt guide |
 | `dirty_forge_create_bot` | Provision an isolated Bot profile (`SOUL.md`, `omh` `auto-safe`, `sentinel`, `journal`, `cron`, `draft` mode) |
 | `dirty_forge_eval_bot` | Run pass/fail evaluation cases and save an audit report under `<profile>/evals/` |
+| `dirty_forge_activate_bot` | Enable `draft` cron routines after `eval_bot` passes 100% (or with `force=true`) |
 | `dirty_forge_create_team` | Build a lead Bot + up to 6 specialists with per-member rollback |
 | `dirty_forge_list_bots` | List existing Bot profiles |
 | `dirty_forge_update_bot` | Update `display_name`, `avatar_kind`, `toolsets`, or append to `SOUL.md` |

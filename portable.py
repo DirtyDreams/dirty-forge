@@ -87,6 +87,29 @@ def copy_bot(
     return res
 
 
+def _resolve_safe_export_path(exports_dir: Path, out_path: str, default_name: str) -> Path:
+    base = exports_dir.resolve()
+    if not out_path:
+        return base / default_name
+    raw = Path(out_path).expanduser()
+    candidate = (base / raw).resolve() if not raw.is_absolute() else raw.resolve()
+    if base not in candidate.parents:
+        raise ValueError(f"out_path must stay inside {exports_dir}")
+    return candidate
+
+
+def _resolve_safe_import_path(root: Path, source_path: str) -> Path:
+    candidate = Path(source_path).expanduser().resolve()
+    allowed_roots = [
+        (root / "exports").resolve(),
+        (root / "templates").resolve(),
+        Path.cwd().resolve(),
+    ]
+    if not any(base in candidate.parents for base in allowed_roots):
+        raise ValueError(f"source_path must be inside {root / 'exports'}, {root / 'templates'}, or current working directory")
+    return candidate
+
+
 def share_bot(
     name: str,
     mode: str = "template",
@@ -95,7 +118,10 @@ def share_bot(
     root: Path | None = None,
 ) -> dict[str, Any]:
     r = root or forge.default_root()
-    pid = forge.slugify_profile(name)
+    ok, pid_or_err = forge.validate_profile_id(name, allow_default=False)
+    if not ok:
+        return {"ok": False, "error": pid_or_err}
+    pid = pid_or_err
     pdir = forge.profile_dir(r, pid)
     if not pdir.is_dir():
         return {"ok": False, "error": f"Bot '{name}' not found"}
@@ -105,7 +131,10 @@ def share_bot(
 
     if mode == "backup":
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        archive = Path(out_path).expanduser() if out_path else (exports_dir / f"{pid}-backup-{stamp}.tar.gz")
+        try:
+            archive = _resolve_safe_export_path(exports_dir, out_path, f"{pid}-backup-{stamp}.tar.gz")
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
         archive.parent.mkdir(parents=True, exist_ok=True)
         with tarfile.open(archive, "w:gz") as tar:
             tar.add(pdir, arcname=pid)
@@ -146,7 +175,10 @@ def share_bot(
     if secrets and not allow_secrets:
         return {"ok": False, "error": f"export blocked by secret scanner ({', '.join(secrets)})"}
 
-    target = Path(out_path).expanduser() if out_path else (exports_dir / f"{pid}.dirtyforge.json")
+    try:
+        target = _resolve_safe_export_path(exports_dir, out_path, f"{pid}.dirtyforge.json")
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(serialized + "\n", encoding="utf-8")
     return {"ok": True, "mode": "template", "path": str(target)}
@@ -160,7 +192,10 @@ def import_bot(
     root: Path | None = None,
 ) -> dict[str, Any]:
     r = root or forge.default_root()
-    src = Path(source_path).expanduser()
+    try:
+        src = _resolve_safe_import_path(r, source_path)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
     if not src.is_file():
         return {"ok": False, "error": f"template file not found: {source_path}"}
     raw = src.read_text(encoding="utf-8", errors="ignore")

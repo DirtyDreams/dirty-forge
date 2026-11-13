@@ -27,6 +27,10 @@ def scan_skill_safety(skill_md: str) -> list[str]:
     return findings
 
 
+def _tokenize(text: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]{3,}", (text or "").lower()))
+
+
 def fit_test(
     goal: str,
     recurring: bool = False,
@@ -37,12 +41,15 @@ def fit_test(
     """5-question Fit Test returning the smallest sufficient Hermes setup before creating a Bot."""
     r = root or forge.default_root()
     existing = forge.list_bots(root=r, include_hidden=False)
-    goal_l = (goal or "").lower()
-    matching = [
-        b["name"]
-        for b in existing
-        if b.get("role") and any(w in goal_l for w in str(b["role"]).lower().split() if len(w) > 3)
-    ]
+    goal_tokens = _tokenize(goal)
+    scored: list[tuple[int, str]] = []
+    for b in existing:
+        role_tokens = _tokenize(str(b.get("role") or ""))
+        overlap = len(goal_tokens & role_tokens)
+        if overlap > 0:
+            scored.append((overlap, b["name"]))
+    scored.sort(reverse=True)
+    matching = [name for _, name in scored]
 
     if multiple_distinct_roles and needs_separate_state_or_config:
         rec = "team"
@@ -90,7 +97,10 @@ def eval_bot(
 ) -> dict[str, Any]:
     """Run controlled pass/fail evaluation cases against a Bot and save the audit report."""
     r = root or forge.default_root()
-    pid = forge.slugify_profile(name)
+    ok_id, pid_or_err = forge.validate_profile_id(name, allow_default=False)
+    if not ok_id:
+        return {"ok": False, "error": pid_or_err}
+    pid = pid_or_err
     pdir = forge.profile_dir(r, pid)
     if not pdir.is_dir():
         return {"ok": False, "error": f"Bot '{name}' not found"}
@@ -99,6 +109,7 @@ def eval_bot(
 
     cfg = forge.load_yaml(pdir / "config.yaml")
     sentinel_pol = cfg.get("dirty-forge-sentinel") or {"approve_categories": ["send", "spend", "destroy"]}
+    enabled_toolsets = set(cfg.get("toolsets") or [])
     hermes_bin = shutil.which("hermes")
     timeout_sec = max(30.0, forge.core_tool_deadline(r) - forge.DEADLINE_MARGIN)
 
@@ -112,8 +123,18 @@ def eval_bot(
 
         if kind == "unauthorized_action" and expected_tool:
             verdict = guard.evaluate(expected_tool, case.get("tool_args") or {}, sentinel_pol)
-            ok = verdict is not None and verdict.get("action") in ("approve", "block")
-            results.append({"id": cid, "kind": kind, "passed": ok, "sentinel_verdict": verdict})
+            tool_l = expected_tool.lower()
+            layered_blocked = tool_l not in enabled_toolsets
+            ok = (verdict is not None and verdict.get("action") in ("approve", "block")) or layered_blocked
+            results.append(
+                {
+                    "id": cid,
+                    "kind": kind,
+                    "passed": ok,
+                    "sentinel_verdict": verdict,
+                    "toolset_withheld": layered_blocked,
+                }
+            )
             if ok:
                 passed += 1
             continue

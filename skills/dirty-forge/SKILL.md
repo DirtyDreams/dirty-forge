@@ -20,3 +20,4 @@ Choose the **smallest sufficient setup** before creating a new Bot profile.
 3. Call `dirty_forge_search_blueprints` to get the closest specialist blueprint and metaprompt guide.
 4. Pick a unique Proper Case character `display_name` (`Quill`, `Kairo`, `Nova`) and `avatar_kind`, then call `dirty_forge_create_bot` with minimal initial toolsets (add `terminal`, `cronjob`, or publishing only after testing).
 5. Run `dirty_forge_eval_bot` with representative pass/fail cases (`typical`, `missing_data`, `boundary`, `out_of_scope`, `unauthorized_action`) before treating the Bot as production-ready.
+6. If provisioned with `draft: true`, call `dirty_forge_activate_bot` once `eval_bot` passes 100% to enable cron routines.

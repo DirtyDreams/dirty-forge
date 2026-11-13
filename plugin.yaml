@@ -14,6 +14,7 @@ provides_tools:
   - dirty_forge_fit_test
   - dirty_forge_create_bot
   - dirty_forge_eval_bot
+  - dirty_forge_activate_bot
   - dirty_forge_create_team
   - dirty_forge_list_bots
   - dirty_forge_update_bot
