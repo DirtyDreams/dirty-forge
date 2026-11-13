@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from . import forge
+from . import evals, forge
 from .sentinel.guard import scan_secrets
 
 _SKILL_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
@@ -27,9 +27,9 @@ def teach_bot(name: str, skill_name: str, skill_md: str, root: Path | None = Non
     content = (skill_md or "").strip()
     if not content:
         return {"ok": False, "error": "skill_md is required"}
-    secrets = scan_secrets(content)
-    if secrets:
-        return {"ok": False, "error": f"refused to teach skill: secret pattern detected ({', '.join(secrets)})"}
+    findings = evals.scan_skill_safety(content)
+    if findings:
+        return {"ok": False, "error": f"refused to teach skill: safety check failed ({', '.join(findings)})"}
 
     skill_dir = pdir / "skills" / slug
     skill_dir.mkdir(parents=True, exist_ok=True)
@@ -37,7 +37,11 @@ def teach_bot(name: str, skill_name: str, skill_md: str, root: Path | None = Non
         content = f"---\nname: {slug}\ndescription: Taught skill for {pid}\n---\n\n{content}"
     target = skill_dir / "SKILL.md"
     target.write_text(content + "\n", encoding="utf-8")
-    return {"ok": True, "bot": pid, "skill": slug, "path": str(target)}
+    existing_count = sum(1 for c in (pdir / "skills").iterdir() if c.is_dir() and (c / "SKILL.md").is_file())
+    res: dict[str, Any] = {"ok": True, "bot": pid, "skill": slug, "path": str(target), "skill_count": existing_count}
+    if existing_count > 3:
+        res["warning"] = "Bot now has >3 skills; SkillsBench 1.1 shows 2-3 focused skills typically outperform >=4."
+    return res
 
 
 def copy_bot(

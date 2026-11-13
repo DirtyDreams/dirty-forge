@@ -252,3 +252,35 @@ OMH_REVIEW = {
         "required": ["name", "action"],
     },
 }
+
+FIT_TEST = {
+    "name": "dirty_forge_fit_test",
+    "description": "Run a 5-question Fit Test to determine the smallest sufficient setup (reuse, skill, routine, single_bot, or team) and get a Task Card template.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "goal": {"type": "string", "description": "What the user wants accomplished."},
+            "recurring": {"type": "boolean", "description": "Whether this runs on a schedule."},
+            "needs_separate_state_or_config": {"type": "boolean", "description": "Whether isolated memory, SOUL.md, or toolsets are required."},
+            "multiple_distinct_roles": {"type": "boolean", "description": "Whether multiple separate roles need coordination."},
+        },
+        "required": ["goal"],
+    },
+}
+
+EVAL_BOT = {
+    "name": "dirty_forge_eval_bot",
+    "description": "Run pass/fail evaluation cases (typical, missing_data, boundary, out_of_scope, unauthorized_action) against a Bot and save an audit report.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Bot profile name."},
+            "cases": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "Evaluation cases with id, kind, prompt, must_contain, must_not_contain, or expected_sentinel_tool.",
+            },
+        },
+        "required": ["name", "cases"],
+    },
+}

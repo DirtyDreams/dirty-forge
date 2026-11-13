@@ -7,7 +7,7 @@ import shutil
 import subprocess
 from typing import Any
 
-from . import blueprints, compiler, forge, handoff, journal, omh_memory, policy, portable, team
+from . import blueprints, compiler, evals, forge, handoff, journal, omh_memory, policy, portable, team
 
 
 def _json(payload: dict[str, Any]) -> str:
@@ -201,5 +201,25 @@ def omh_review(args: dict[str, Any], **kwargs: Any) -> str:
             name=str((args or {}).get("name") or ""),
             action=str((args or {}).get("action") or "list"),
             candidate_id=str((args or {}).get("candidate_id") or ""),
+        )
+    )
+
+
+def fit_test(args: dict[str, Any], **kwargs: Any) -> str:
+    return _json(
+        evals.fit_test(
+            goal=str((args or {}).get("goal") or ""),
+            recurring=bool((args or {}).get("recurring", False)),
+            needs_separate_state_or_config=bool((args or {}).get("needs_separate_state_or_config", False)),
+            multiple_distinct_roles=bool((args or {}).get("multiple_distinct_roles", False)),
+        )
+    )
+
+
+def eval_bot(args: dict[str, Any], **kwargs: Any) -> str:
+    return _json(
+        evals.eval_bot(
+            name=str((args or {}).get("name") or ""),
+            cases=list((args or {}).get("cases") or []),
         )
     )

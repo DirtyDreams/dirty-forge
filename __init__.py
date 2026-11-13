@@ -48,7 +48,9 @@ def register(ctx: Any) -> None:
 
     tool_specs = (
         ("dirty_forge_search_blueprints", schemas.SEARCH_BLUEPRINTS, tools.search_blueprints, "🔍", "Search specialist blueprints and SOUL.md metaprompt guide", False),
+        ("dirty_forge_fit_test", schemas.FIT_TEST, tools.fit_test, "🧭", "Run 5-question Fit Test before creating a Bot", False),
         ("dirty_forge_create_bot", schemas.CREATE_BOT, tools.create_bot, "🧪", "Provision a complete Hermes Bot profile", True),
+        ("dirty_forge_eval_bot", schemas.EVAL_BOT, tools.eval_bot, "✅", "Run pass/fail evaluation gate on a Bot", False),
         ("dirty_forge_create_team", schemas.CREATE_TEAM, tools.create_team, "🧬", "Build a team of Bots with a lead", True),
         ("dirty_forge_list_bots", schemas.LIST_BOTS, tools.list_bots, "📋", "List Hermes Bots on this machine", False),
         ("dirty_forge_update_bot", schemas.UPDATE_BOT, tools.update_bot, "✏️", "Update an existing Bot", False),
