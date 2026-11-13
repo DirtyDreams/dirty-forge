@@ -1,0 +1,80 @@
+name: dirty-forge
+version: 0.1.0
+description: Say "make me a <role>" and your Hermes agent builds a complete, working Bot — name, avatar, compiled SOUL.md, OMH auto-safe memory, sentinel guardrails, journal, routines, and gateway — tested and rolled back on failure.
+author: DirtyDreams
+license: MIT
+tags: [bots, bot-mode, profiles, agents, omh, sentinel, metaprompt]
+kind: standalone
+requires_hermes: ">=0.21"
+python_dependencies:
+  - PyYAML>=6.0,<7
+provides_tools:
+  - dirty_forge_search_blueprints
+  - dirty_forge_create_bot
+  - dirty_forge_list_bots
+  - dirty_forge_update_bot
+  - dirty_forge_check_bots
+  - dirty_forge_journal
+  - dirty_forge_ask_bot
+  - dirty_forge_hide_bot
+  - dirty_forge_delete_bot
+provides_hooks:
+  - pre_llm_call
+  - post_llm_call
+config_schema:
+  inherit_model:
+    type: bool
+    default: true
+    description: Inherit the launching profile's model when no explicit model is supplied.
+  fallback_model:
+    type: dict
+    default: {}
+    description: "Fallback model block ({default, provider, base_url}) when inherited model cannot sign in."
+  probe_local_models:
+    type: bool
+    default: false
+    description: Probe local OpenAI-compatible servers (Ollama, llama.cpp, LM Studio) as fallback.
+  omh_memory_mode:
+    type: str
+    default: "auto-safe"
+    description: "Default oh-my-hermes project memory mode for new Bots: auto-safe, review-first, or off."
+  inherit_plugins:
+    type: list
+    default: ["omh"]
+    description: Plugins from the root profile to copy and enable in every new Bot (omh is included by default).
+  enforce_approvals:
+    type: bool
+    default: true
+    description: Install dirty-forge-sentinel into each new Bot for pre_tool_call gating and command-injection checks.
+  journal_enabled:
+    type: bool
+    default: true
+    description: Give new Bots an append-only daily work journal under <profile>/journal/.
+  ack_reactions:
+    type: bool
+    default: true
+    description: Begin Bot replies with a status emoji (👀/💬/✅/✋/⚠️/⏳).
+  ack_tapback:
+    type: bool
+    default: true
+    description: React to the user's message in Hermes Desktop during turns via pre_llm_call/post_llm_call.
+  workspace_survey:
+    type: bool
+    default: true
+    description: Perform a shallow read-only survey of the workspace into the new Bot's MEMORY.md.
+  workspace_roots:
+    type: list
+    default: []
+    description: Extra workspace directories to survey instead of CWD.
+  install_gateway:
+    type: bool
+    default: true
+    description: Verify live host gateway serving and request hot-rescan when creating a Bot.
+  allow_delete:
+    type: bool
+    default: false
+    description: Allow dirty_forge_delete_bot to permanently remove a Bot profile. Off by default.
+  backup_before_delete:
+    type: bool
+    default: true
+    description: Export a .tar.gz backup archive before deleting a Bot profile.
