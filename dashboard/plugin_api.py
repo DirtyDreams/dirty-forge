@@ -65,7 +65,56 @@ _SETTINGS_DEFAULTS: dict[str, Any] = {
     "circuit_breaker_max_calls": 40,
     "circuit_breaker_max_errors": 5,
     "strict_intake": False,
+    "allow_trusted_mcp": False,
 }
+
+_VALID_OMH_MODES = ("auto-safe", "review-first", "off")
+_BOOL_SETTINGS = {
+    "inherit_model",
+    "probe_local_models",
+    "enforce_approvals",
+    "journal_enabled",
+    "ack_reactions",
+    "ack_tapback",
+    "workspace_survey",
+    "install_gateway",
+    "allow_secrets",
+    "allow_delete",
+    "backup_before_delete",
+    "allow_external_delegation",
+    "strict_intake",
+    "allow_trusted_mcp",
+}
+_INT_SETTINGS = {"circuit_breaker_max_calls", "circuit_breaker_max_errors"}
+_LIST_SETTINGS = {"inherit_plugins", "workspace_roots", "allowed_external_clis"}
+
+
+def _validate_settings_updates(updates: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+    clean: dict[str, Any] = {}
+    for k, v in updates.items():
+        if k not in _SETTINGS_DEFAULTS:
+            continue
+        if k in _BOOL_SETTINGS:
+            if not isinstance(v, bool):
+                return {}, f"setting '{k}' must be a boolean"
+            clean[k] = v
+        elif k in _INT_SETTINGS:
+            if isinstance(v, bool) or not isinstance(v, int) or v < 1 or v > 10000:
+                return {}, f"setting '{k}' must be an integer between 1 and 10000"
+            clean[k] = v
+        elif k == "omh_memory_mode":
+            if v not in _VALID_OMH_MODES:
+                return {}, f"setting 'omh_memory_mode' must be one of {_VALID_OMH_MODES}"
+            clean[k] = v
+        elif k in _LIST_SETTINGS:
+            if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
+                return {}, f"setting '{k}' must be a list of strings"
+            clean[k] = v
+        elif k == "fallback_model":
+            if not isinstance(v, dict):
+                return {}, "setting 'fallback_model' must be a dict"
+            clean[k] = v
+    return clean, None
 
 
 def _load_settings(root: Path | None = None) -> dict[str, Any]:
@@ -161,7 +210,10 @@ def update_settings(payload: dict[str, Any] = Body(default={})) -> dict[str, Any
     updates = payload.get("settings") if isinstance(payload.get("settings"), dict) else payload
     if not isinstance(updates, dict):
         return {"ok": False, "error": "settings object required"}
-    saved = _save_settings(updates)
+    clean, err = _validate_settings_updates(updates)
+    if err:
+        return {"ok": False, "error": err}
+    saved = _save_settings(clean)
     return {"ok": True, "settings": saved}
 
 
@@ -374,11 +426,41 @@ def get_takeovers(name: str) -> dict[str, Any]:
     return {"ok": True, "name": pid_or_err, "count": len(items), "takeovers": items}
 
 
+@router.get("/bots/{name}/files")
+def get_bot_files(name: str) -> dict[str, Any]:
+    ok_id, pid_or_err = forge.validate_profile_id(name)
+    if not ok_id:
+        return {"ok": False, "error": pid_or_err}
+    pdir = forge.profile_dir(forge.default_root(), pid_or_err)
+    if not pdir.is_dir():
+        return {"ok": False, "error": f"profile '{name}' not found"}
+    soul = (pdir / "SOUL.md").read_text(encoding="utf-8", errors="ignore") if (pdir / "SOUL.md").is_file() else ""
+    memory = (pdir / "MEMORY.md").read_text(encoding="utf-8", errors="ignore") if (pdir / "MEMORY.md").is_file() else ""
+    cfg = forge.load_yaml(pdir / "config.yaml")
+    bots_meta = cfg.get("bots") if isinstance(cfg.get("bots"), dict) else {}
+    return {
+        "ok": True,
+        "name": pid_or_err,
+        "display_name": bots_meta.get("title") or pid_or_err,
+        "avatar_kind": bots_meta.get("avatar_kind") or "boxy",
+        "toolsets": cfg.get("toolsets") or [],
+        "soul_md": soul,
+        "memory_md": memory,
+    }
+
+
 @router.post("/bots/{name}/takeover")
 def create_takeover(name: str, payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
     reason = str(payload.get("reason") or "").strip()
-    context = payload.get("context") if isinstance(payload.get("context"), dict) else {}
+    raw_ctx = payload.get("context")
+    context = json.dumps(raw_ctx, ensure_ascii=False) if isinstance(raw_ctx, dict) else str(raw_ctx or "")
     return takeover.request_takeover(name, reason=reason, context=context)
+
+
+@router.post("/bots/{name}/takeovers/{takeover_id}/resolve")
+def resolve_takeover(name: str, takeover_id: str, payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    resolution = str((payload or {}).get("resolution") or "").strip()
+    return takeover.resolve_takeover(name, takeover_id, resolution=resolution)
 
 
 @router.post("/bots/{name}/share")

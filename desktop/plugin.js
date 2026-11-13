@@ -96,6 +96,27 @@ function RosterTab({ ctx, bots, onRefresh, onSelectBot }) {
   const [confirmDelete, setConfirmDelete] = useState('')
   const [importPath, setImportPath] = useState('')
   const [importName, setImportName] = useState('')
+  const [inspectData, setInspectData] = useState(null)
+  const [editDisplay, setEditDisplay] = useState('')
+  const [editAppendSoul, setEditAppendSoul] = useState('')
+
+  async function openInspect(botName) {
+    setBusy(`insp:${botName}`)
+    try {
+      const res = await ctx.rest(`/bots/${botName}/files`)
+      if (res?.ok) {
+        setInspectData(res)
+        setEditDisplay(res.display_name || botName)
+        setEditAppendSoul('')
+      } else {
+        notifyError(res?.error || 'Failed to load Bot files')
+      }
+    } catch (err) {
+      notifyError(String(err?.message || err))
+    } finally {
+      setBusy('')
+    }
+  }
 
   async function runAction(key, fn, okMsg) {
     setBusy(key)
@@ -250,6 +271,12 @@ function RosterTab({ ctx, bots, onRefresh, onSelectBot }) {
                         jsx('button', {
                           type: 'button',
                           className: btnClass('default'),
+                          onClick: () => void openInspect(bot.name),
+                          children: 'Inspect',
+                        }),
+                        jsx('button', {
+                          type: 'button',
+                          className: btnClass('default'),
                           onClick: () => onSelectBot(bot.name, 'evals'),
                           children: 'Eval',
                         }),
@@ -330,6 +357,88 @@ function RosterTab({ ctx, bots, onRefresh, onSelectBot }) {
               )
             ),
           }),
+      inspectData
+        ? jsxs('div', {
+            className: 'flex flex-col gap-3 rounded border border-blue-500/40 bg-(--ui-bg-secondary) p-3',
+            children: [
+              jsxs('div', {
+                className: 'flex items-center justify-between gap-2',
+                children: [
+                  jsx('div', {
+                    className: 'text-xs font-semibold',
+                    children: `Inspect & Update: ${inspectData.display_name} (${inspectData.name})`,
+                  }),
+                  jsx('button', {
+                    type: 'button',
+                    className: btnClass('default'),
+                    onClick: () => setInspectData(null),
+                    children: 'Close',
+                  }),
+                ],
+              }),
+              jsxs('div', {
+                className: 'grid grid-cols-1 gap-2 md:grid-cols-3',
+                children: [
+                  jsx('input', {
+                    className: inputClass(),
+                    placeholder: 'Display name',
+                    value: editDisplay,
+                    onChange: (e) => setEditDisplay(e.target.value),
+                  }),
+                  jsx('input', {
+                    className: inputClass(),
+                    placeholder: 'Append note/rule to SOUL.md',
+                    value: editAppendSoul,
+                    onChange: (e) => setEditAppendSoul(e.target.value),
+                  }),
+                  jsx('button', {
+                    type: 'button',
+                    className: btnClass('primary'),
+                    disabled: Boolean(busy),
+                    onClick: () =>
+                      runAction(
+                        `upd:${inspectData.name}`,
+                        async () => {
+                          const body = { display_name: editDisplay.trim() }
+                          if (editAppendSoul.trim()) body.append_soul = editAppendSoul.trim()
+                          const res = await ctx.rest(`/bots/${inspectData.name}/update`, { method: 'POST', body })
+                          if (res?.ok) await openInspect(inspectData.name)
+                          return res
+                        },
+                        `Updated ${inspectData.name}`
+                      ),
+                    children: 'Save Update',
+                  }),
+                ],
+              }),
+              jsxs('div', {
+                className: 'grid grid-cols-1 gap-2 lg:grid-cols-2',
+                children: [
+                  jsxs('div', {
+                    className: 'flex flex-col gap-1',
+                    children: [
+                      jsx('div', { className: 'text-[11px] font-medium text-(--ui-text-tertiary)', children: 'SOUL.md' }),
+                      jsx('pre', {
+                        className: 'max-h-56 overflow-auto rounded border border-(--ui-border) bg-(--ui-bg-primary) p-2 text-[11px] whitespace-pre-wrap',
+                        children: inspectData.soul_md || '(empty)',
+                      }),
+                    ],
+                  }),
+                  jsxs('div', {
+                    className: 'flex flex-col gap-1',
+                    children: [
+                      jsx('div', { className: 'text-[11px] font-medium text-(--ui-text-tertiary)', children: 'MEMORY.md' }),
+                      jsx('pre', {
+                        className: 'max-h-56 overflow-auto rounded border border-(--ui-border) bg-(--ui-bg-primary) p-2 text-[11px] whitespace-pre-wrap',
+                        children: inspectData.memory_md || '(empty)',
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+            ],
+          })
+        : null,
       jsxs('div', {
         className: 'flex flex-col gap-2 rounded border border-(--ui-border) bg-(--ui-bg-secondary) p-3',
         children: [
@@ -381,6 +490,67 @@ function InterviewForgeTab({ ctx, onCreated }) {
   const [selectedSlug, setSelectedSlug] = useState('')
   const [busy, setBusy] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
+  const [fitGoal, setFitGoal] = useState('')
+  const [fitRecurring, setFitRecurring] = useState(true)
+  const [fitSeparateState, setFitSeparateState] = useState(true)
+  const [fitMultiRole, setFitMultiRole] = useState(false)
+  const [fitResult, setFitResult] = useState(null)
+  const [teamName, setTeamName] = useState('')
+  const [leadRole, setLeadRole] = useState('')
+  const [memberRoles, setMemberRoles] = useState('')
+
+  async function runFitTest() {
+    if (!fitGoal.trim()) return
+    try {
+      const res = await ctx.rest('/fit-test', {
+        method: 'POST',
+        body: {
+          goal: fitGoal.trim(),
+          recurring: fitRecurring,
+          needs_separate_state_or_config: fitSeparateState,
+          multiple_distinct_roles: fitMultiRole,
+        },
+      })
+      setFitResult(res)
+    } catch (err) {
+      notifyError(String(err?.message || err))
+    }
+  }
+
+  async function createTeamNow() {
+    if (!teamName.trim() || !leadRole.trim()) return
+    setBusy(true)
+    setErrorMsg('')
+    try {
+      const members = memberRoles
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .slice(0, 6)
+        .map((role) => ({ role }))
+      const res = await ctx.rest('/teams', {
+        method: 'POST',
+        body: {
+          team_name: teamName.trim(),
+          lead: { role: leadRole.trim() },
+          members,
+        },
+      })
+      if (!res?.ok) {
+        setErrorMsg(res?.error || 'Failed to create team')
+      } else {
+        notifyInfo(`Created team ${teamName.trim()}`)
+        setTeamName('')
+        setLeadRole('')
+        setMemberRoles('')
+        await onCreated(res.lead_profile_id || '')
+      }
+    } catch (err) {
+      setErrorMsg(String(err?.message || err))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const startOrStep = useCallback(
     async (answers = null, intakeId = '') => {
@@ -637,6 +807,100 @@ function InterviewForgeTab({ ctx, onCreated }) {
           }),
         ],
       }),
+      jsxs('div', {
+        className: 'grid grid-cols-1 gap-4 lg:col-span-3 lg:grid-cols-2',
+        children: [
+          jsxs('div', {
+            className: 'flex flex-col gap-2 rounded border border-(--ui-border) bg-(--ui-bg-secondary) p-3 text-xs',
+            children: [
+              jsx('div', { className: 'font-semibold', children: 'Fit Test (Right-Size Before Forging)' }),
+              jsx('input', {
+                className: inputClass(),
+                placeholder: 'Describe the job or workflow…',
+                value: fitGoal,
+                onChange: (e) => setFitGoal(e.target.value),
+              }),
+              jsxs('div', {
+                className: 'flex flex-wrap gap-3 text-[11px]',
+                children: [
+                  jsxs('label', {
+                    className: 'inline-flex items-center gap-1 cursor-pointer',
+                    children: [
+                      jsx('input', { type: 'checkbox', checked: fitRecurring, onChange: () => setFitRecurring(!fitRecurring) }),
+                      jsx('span', { children: 'Recurring' }),
+                    ],
+                  }),
+                  jsxs('label', {
+                    className: 'inline-flex items-center gap-1 cursor-pointer',
+                    children: [
+                      jsx('input', {
+                        type: 'checkbox',
+                        checked: fitSeparateState,
+                        onChange: () => setFitSeparateState(!fitSeparateState),
+                      }),
+                      jsx('span', { children: 'Separate state/config' }),
+                    ],
+                  }),
+                  jsxs('label', {
+                    className: 'inline-flex items-center gap-1 cursor-pointer',
+                    children: [
+                      jsx('input', { type: 'checkbox', checked: fitMultiRole, onChange: () => setFitMultiRole(!fitMultiRole) }),
+                      jsx('span', { children: 'Multiple distinct roles' }),
+                    ],
+                  }),
+                ],
+              }),
+              jsx('button', {
+                type: 'button',
+                className: btnClass('default'),
+                disabled: !fitGoal.trim(),
+                onClick: () => void runFitTest(),
+                children: 'Run Fit Test',
+              }),
+              fitResult
+                ? jsxs('div', {
+                    className: 'rounded border border-(--ui-border) bg-(--ui-bg-primary) p-2 text-[11px]',
+                    children: [
+                      jsx('div', { className: 'font-semibold', children: `Recommendation: ${fitResult.recommendation}` }),
+                      jsx('div', { className: 'text-(--ui-text-tertiary)', children: fitResult.reason || '' }),
+                    ],
+                  })
+                : null,
+            ],
+          }),
+          jsxs('div', {
+            className: 'flex flex-col gap-2 rounded border border-(--ui-border) bg-(--ui-bg-secondary) p-3 text-xs',
+            children: [
+              jsx('div', { className: 'font-semibold', children: 'Create Multi-Bot Team' }),
+              jsx('input', {
+                className: inputClass(),
+                placeholder: 'Team name (e.g. Release Squad)',
+                value: teamName,
+                onChange: (e) => setTeamName(e.target.value),
+              }),
+              jsx('input', {
+                className: inputClass(),
+                placeholder: 'Lead role (e.g. Release Manager)',
+                value: leadRole,
+                onChange: (e) => setLeadRole(e.target.value),
+              }),
+              jsx('input', {
+                className: inputClass(),
+                placeholder: 'Specialist roles, comma-separated (up to 6)',
+                value: memberRoles,
+                onChange: (e) => setMemberRoles(e.target.value),
+              }),
+              jsx('button', {
+                type: 'button',
+                className: btnClass('primary'),
+                disabled: busy || !teamName.trim() || !leadRole.trim(),
+                onClick: () => void createTeamNow(),
+                children: 'Create Team',
+              }),
+            ],
+          }),
+        ],
+      }),
     ],
   })
 }
@@ -754,6 +1018,7 @@ function GovernanceTab({ ctx, bots, selectedBot, setSelectedBot }) {
   const [journalEntries, setJournalEntries] = useState([])
   const [noteGoal, setNoteGoal] = useState('')
   const [noteOutcome, setNoteOutcome] = useState('')
+  const [takeoverReason, setTakeoverReason] = useState('')
 
   const target = selectedBot || bots[0]?.name || ''
 
@@ -787,6 +1052,35 @@ function GovernanceTab({ ctx, bots, selectedBot, setSelectedBot }) {
       await loadAll()
     } else {
       notifyError(res?.error || 'OMH review failed')
+    }
+  }
+
+  async function createTakeover() {
+    if (!target || !takeoverReason.trim()) return
+    const res = await ctx.rest(`/bots/${target}/takeover`, {
+      method: 'POST',
+      body: { reason: takeoverReason.trim() },
+    })
+    if (res?.ok) {
+      setTakeoverReason('')
+      notifyInfo('Takeover requested')
+      await loadAll()
+    } else {
+      notifyError(res?.error || 'Takeover request failed')
+    }
+  }
+
+  async function resolveTakeover(takeoverId) {
+    if (!target || !takeoverId) return
+    const res = await ctx.rest(`/bots/${target}/takeovers/${takeoverId}/resolve`, {
+      method: 'POST',
+      body: { resolution: 'Resolved by operator in DirtyForge Studio' },
+    })
+    if (res?.ok) {
+      notifyInfo(`Takeover ${takeoverId} resolved`)
+      await loadAll()
+    } else {
+      notifyError(res?.error || 'Failed to resolve takeover')
     }
   }
 
@@ -865,16 +1159,49 @@ function GovernanceTab({ ctx, bots, selectedBot, setSelectedBot }) {
             className: 'flex flex-col gap-2 rounded border border-(--ui-border) bg-(--ui-bg-secondary) p-3',
             children: [
               jsx('div', { className: 'text-xs font-semibold', children: `Human Takeovers (${takeovers.length})` }),
+              jsxs('div', {
+                className: 'flex gap-1.5',
+                children: [
+                  jsx('input', {
+                    className: inputClass(),
+                    placeholder: 'Reason for manual takeover…',
+                    value: takeoverReason,
+                    onChange: (e) => setTakeoverReason(e.target.value),
+                  }),
+                  jsx('button', {
+                    type: 'button',
+                    className: btnClass('default'),
+                    disabled: !target || !takeoverReason.trim(),
+                    onClick: () => void createTakeover(),
+                    children: 'Request',
+                  }),
+                ],
+              }),
               takeovers.length === 0
                 ? jsx('div', { className: 'text-[11px] text-(--ui-text-tertiary)', children: 'No takeover requests.' })
                 : takeovers.map((t, idx) =>
                     jsxs(
                       'div',
                       {
-                        className: 'rounded border border-(--ui-border) bg-(--ui-bg-primary) p-2 text-xs',
+                        className: 'flex items-center justify-between gap-2 rounded border border-(--ui-border) bg-(--ui-bg-primary) p-2 text-xs',
                         children: [
-                          jsx('div', { className: 'font-medium', children: t.reason || 'Takeover requested' }),
-                          jsx('div', { className: 'text-[11px] text-(--ui-text-tertiary)', children: t.status || 'pending_human' }),
+                          jsxs('div', {
+                            children: [
+                              jsx('div', { className: 'font-medium', children: t.reason || 'Takeover requested' }),
+                              jsx('div', {
+                                className: 'text-[11px] text-(--ui-text-tertiary)',
+                                children: `${t.status || 'pending_human'}${t.resolution ? ` — ${t.resolution}` : ''}`,
+                              }),
+                            ],
+                          }),
+                          t.status === 'pending_human' && t.id
+                            ? jsx('button', {
+                                type: 'button',
+                                className: btnClass('primary'),
+                                onClick: () => void resolveTakeover(t.id),
+                                children: 'Resolve',
+                              })
+                            : jsx('span', { className: badgeClass('ok'), children: 'resolved' }),
                         ],
                       },
                       t.id || String(idx)
@@ -1030,15 +1357,17 @@ function DirtyForgeSettings({ ctx }) {
     }
   }, [ctx])
 
-  async function toggleKey(key) {
+  async function savePatch(patch, label) {
     if (!settings) return
     setSaving(true)
     try {
-      const next = { ...settings, [key]: !settings[key] }
+      const next = { ...settings, ...patch }
       const res = await ctx.rest('/settings', { method: 'PUT', body: { settings: next } })
       if (res?.ok) {
         setSettings(res.settings)
-        notifyInfo(`Updated ${key}`)
+        notifyInfo(`Updated ${label}`)
+      } else if (res?.error) {
+        notifyError(res.error)
       }
     } catch (err) {
       notifyError(String(err?.message || err))
@@ -1054,8 +1383,13 @@ function DirtyForgeSettings({ ctx }) {
   const boolKeys = [
     ['strict_intake', 'Require completed discovery interview (strict_intake) before create_bot'],
     ['enforce_approvals', 'Install dirty-forge-sentinel (pre_tool_call guardrails & circuit breaker)'],
+    ['inherit_model', 'Inherit launching profile model when no explicit model is supplied'],
+    ['journal_enabled', 'Give new Bots an append-only daily work journal'],
+    ['workspace_survey', 'Perform shallow read-only workspace survey into MEMORY.md'],
     ['ack_reactions', 'Prefix Bot replies with status emoji'],
     ['ack_tapback', 'Show desktop message tapback reactions during turns'],
+    ['backup_before_delete', 'Export .tar.gz backup before deleting a Bot'],
+    ['allow_trusted_mcp', 'Allow Bots to mark mcp_servers as trust=trusted without per-spec override'],
     ['allow_external_delegation', 'Allow delegate_outside to invoke allowlisted external CLIs'],
     ['allow_delete', 'Allow permanent Bot deletion (creates .tar.gz backup)'],
   ]
@@ -1064,6 +1398,64 @@ function DirtyForgeSettings({ ctx }) {
     className: 'flex flex-col gap-3 p-2 text-xs',
     children: [
       jsx('div', { className: 'text-sm font-semibold', children: 'DirtyForge Settings' }),
+      jsxs('div', {
+        className: 'grid grid-cols-1 gap-2 rounded border border-(--ui-border) p-2.5 md:grid-cols-3',
+        children: [
+          jsxs('label', {
+            className: 'flex flex-col gap-1',
+            children: [
+              jsx('span', { className: 'text-[11px] text-(--ui-text-tertiary)', children: 'Default OMH Memory Mode' }),
+              jsx('select', {
+                className: inputClass(),
+                value: settings.omh_memory_mode || 'auto-safe',
+                disabled: saving,
+                onChange: (e) => void savePatch({ omh_memory_mode: e.target.value }, 'omh_memory_mode'),
+                children: [
+                  jsx('option', { value: 'auto-safe', children: 'auto-safe' }, 'auto-safe'),
+                  jsx('option', { value: 'review-first', children: 'review-first' }, 'review-first'),
+                  jsx('option', { value: 'off', children: 'off' }, 'off'),
+                ],
+              }),
+            ],
+          }),
+          jsxs('label', {
+            className: 'flex flex-col gap-1',
+            children: [
+              jsx('span', { className: 'text-[11px] text-(--ui-text-tertiary)', children: 'Circuit Breaker Max Calls' }),
+              jsx('input', {
+                type: 'number',
+                min: 1,
+                max: 10000,
+                className: inputClass(),
+                value: settings.circuit_breaker_max_calls ?? 40,
+                disabled: saving,
+                onChange: (e) => {
+                  const n = Number.parseInt(e.target.value, 10)
+                  if (Number.isFinite(n) && n >= 1) void savePatch({ circuit_breaker_max_calls: n }, 'circuit_breaker_max_calls')
+                },
+              }),
+            ],
+          }),
+          jsxs('label', {
+            className: 'flex flex-col gap-1',
+            children: [
+              jsx('span', { className: 'text-[11px] text-(--ui-text-tertiary)', children: 'Circuit Breaker Max Errors' }),
+              jsx('input', {
+                type: 'number',
+                min: 1,
+                max: 10000,
+                className: inputClass(),
+                value: settings.circuit_breaker_max_errors ?? 5,
+                disabled: saving,
+                onChange: (e) => {
+                  const n = Number.parseInt(e.target.value, 10)
+                  if (Number.isFinite(n) && n >= 1) void savePatch({ circuit_breaker_max_errors: n }, 'circuit_breaker_max_errors')
+                },
+              }),
+            ],
+          }),
+        ],
+      }),
       boolKeys.map(([key, label]) =>
         jsxs(
           'label',
@@ -1075,7 +1467,7 @@ function DirtyForgeSettings({ ctx }) {
                 type: 'checkbox',
                 checked: Boolean(settings[key]),
                 disabled: saving,
-                onChange: () => void toggleKey(key),
+                onChange: () => void savePatch({ [key]: !settings[key] }, key),
               }),
             ],
           },

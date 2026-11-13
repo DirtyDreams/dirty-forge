@@ -454,7 +454,7 @@ def forge_bot(spec: dict[str, Any], settings: dict[str, Any] | None = None) -> d
                 },
             }
             if isinstance(spec.get("mcp_servers"), dict) and spec["mcp_servers"]:
-                allow_trusted = bool(spec.get("allow_trusted_mcp", False))
+                allow_trusted = bool(spec.get("allow_trusted_mcp", settings.get("allow_trusted_mcp", False)))
                 sanitized_mcp: dict[str, Any] = {}
                 for srv_name, srv_cfg in spec["mcp_servers"].items():
                     if not isinstance(srv_cfg, dict):

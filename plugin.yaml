@@ -122,3 +122,7 @@ config_schema:
     type: bool
     default: false
     description: Require a completed dirty_forge_interview (or full task_card) before dirty_forge_create_bot can provision a Bot.
+  allow_trusted_mcp:
+    type: bool
+    default: false
+    description: Allow newly provisioned Bots to mark mcp_servers as trust=trusted without explicit per-spec override. Off by default.

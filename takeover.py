@@ -58,6 +58,48 @@ def request_takeover(
     return {"ok": True, "takeover_id": tid, "bot": pid, "status": "pending_human", "path": str(path)}
 
 
+def resolve_takeover(
+    name: str,
+    takeover_id: str,
+    resolution: str = "",
+    root: Path | None = None,
+) -> dict[str, Any]:
+    r = root or forge.default_root()
+    ok_id, pid_or_err = forge.validate_profile_id(name, allow_default=False)
+    if not ok_id:
+        return {"ok": False, "error": pid_or_err}
+    pid = pid_or_err
+    pdir = forge.profile_dir(r, pid)
+    if not pdir.is_dir():
+        return {"ok": False, "error": f"Bot '{name}' not found"}
+    tid = (takeover_id or "").strip()
+    if not tid or "/" in tid or "\\" in tid or ".." in tid:
+        return {"ok": False, "error": f"invalid takeover_id '{takeover_id}'"}
+
+    path = pdir / "takeovers" / f"{tid}.json"
+    if not path.is_file():
+        return {"ok": False, "error": f"takeover '{tid}' not found"}
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"ok": False, "error": f"corrupt takeover '{tid}'"}
+
+    record["status"] = "resolved"
+    record["resolution"] = redact_text((resolution or "Resolved by operator").strip())[:1000]
+    record["resolved_at"] = datetime.now(timezone.utc).isoformat()
+    path.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    journal.write_entry(
+        pdir,
+        status="done",
+        goal=f"Human takeover resolved ({tid})",
+        outcome=record["resolution"][:300],
+        evidence=str(path),
+        next_step="Resume normal operation",
+    )
+    return {"ok": True, "takeover_id": tid, "bot": pid, "status": "resolved", "record": record}
+
+
 def delegate_outside(
     cli: str,
     task: str,

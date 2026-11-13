@@ -27,6 +27,7 @@ _SETTINGS_KEYS = (
     "circuit_breaker_max_calls",
     "circuit_breaker_max_errors",
     "strict_intake",
+    "allow_trusted_mcp",
 )
 
 

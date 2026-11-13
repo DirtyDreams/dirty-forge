@@ -46,9 +46,18 @@ class DirtyForgeDesktopUITests(unittest.TestCase):
         self.assertTrue(s_get["ok"])
         self.assertFalse(s_get["settings"]["strict_intake"])
 
-        s_put = plugin_api.update_settings({"settings": {"strict_intake": True}})
+        s_put = plugin_api.update_settings({"settings": {"strict_intake": True, "allow_trusted_mcp": True}})
         self.assertTrue(s_put["ok"])
         self.assertTrue(s_put["settings"]["strict_intake"])
+        self.assertTrue(s_put["settings"]["allow_trusted_mcp"])
+
+        # Settings type validation rejects invalid values
+        bad_int = plugin_api.update_settings({"settings": {"circuit_breaker_max_calls": 0}})
+        self.assertFalse(bad_int["ok"])
+        bad_mode = plugin_api.update_settings({"settings": {"omh_memory_mode": "invalid"}})
+        self.assertFalse(bad_mode["ok"])
+        bad_bool = plugin_api.update_settings({"settings": {"strict_intake": "yes"}})
+        self.assertFalse(bad_bool["ok"])
 
         # Complete interview via REST handler
         iv = plugin_api.run_interview(
@@ -79,7 +88,7 @@ class DirtyForgeDesktopUITests(unittest.TestCase):
         self.assertTrue(created["ok"])
         bot_name = created["name"]
 
-        # Summary & roster
+        # Summary & roster & files
         summary = plugin_api.get_summary()
         self.assertEqual(summary["total_bots"], 1)
 
@@ -87,7 +96,11 @@ class DirtyForgeDesktopUITests(unittest.TestCase):
         self.assertEqual(bots["count"], 1)
         self.assertTrue(bots["bots"][0]["has_intake"])
 
-        # Eval, journal, takeover, OMH
+        files = plugin_api.get_bot_files(bot_name)
+        self.assertTrue(files["ok"])
+        self.assertIn("## Task Card", files["soul_md"])
+
+        # Eval, journal, takeover create & resolve, OMH
         ev = plugin_api.run_bot_eval(bot_name, {})
         self.assertTrue(ev["ok"])
 
@@ -103,9 +116,22 @@ class DirtyForgeDesktopUITests(unittest.TestCase):
         self.assertTrue(tk["ok"])
         tk_list = plugin_api.get_takeovers(bot_name)
         self.assertEqual(tk_list["count"], 1)
+        self.assertEqual(plugin_api.get_summary()["pending_takeovers"], 1)
+
+        tk_res = plugin_api.resolve_takeover(bot_name, tk["takeover_id"], {"resolution": "Handled"})
+        self.assertTrue(tk_res["ok"])
+        self.assertEqual(tk_res["status"], "resolved")
+        self.assertEqual(plugin_api.get_summary()["pending_takeovers"], 0)
 
         omh = plugin_api.list_omh(bot_name)
         self.assertTrue(omh["ok"])
+
+        # Extended doctor checks
+        from dirty_forge import doctor as df_doctor
+        doc = df_doctor.run_doctor()
+        self.assertTrue(doc["desktop_ui_present"])
+        self.assertTrue(doc["dashboard_api_present"])
+        self.assertGreaterEqual(doc["intake_sessions"], 1)
 
         # Delete blocked by default allow_delete=False
         deleted = plugin_api.delete_bot(bot_name)
