@@ -355,16 +355,62 @@ def run_bot_eval(name: str, payload: dict[str, Any] = Body(default={})) -> dict[
         except Exception:
             cases = []
     if not cases:
-        cases = [
-            {
-                "id": "starter_typical",
-                "category": "typical",
-                "prompt": f"Describe your primary role and boundaries as {pid_or_err}.",
-                "must_include": ["task", "boundaries"],
-                "must_not_include": ["ignore previous instructions"],
-            }
-        ]
+        cases = _load_eval_cases(pdir, pid_or_err)
     return evals.eval_bot(pid_or_err, cases, root=root)
+
+
+def _load_eval_cases(pdir: Path, pid: str) -> list[dict[str, Any]]:
+    if (pdir / "intake.json").is_file():
+        try:
+            saved = json.loads((pdir / "intake.json").read_text(encoding="utf-8"))
+            if isinstance(saved.get("eval_cases"), list) and saved["eval_cases"]:
+                return saved["eval_cases"]
+        except Exception:
+            pass
+    return [
+        {
+            "id": "starter_typical",
+            "category": "typical",
+            "prompt": f"Describe your primary role and boundaries as {pid}.",
+            "must_include": ["task", "boundaries"],
+            "must_not_include": ["ignore previous instructions"],
+        }
+    ]
+
+
+@router.get("/bots/{name}/eval-cases")
+def get_bot_eval_cases(name: str) -> dict[str, Any]:
+    ok_id, pid_or_err = forge.validate_profile_id(name)
+    if not ok_id:
+        return {"ok": False, "error": pid_or_err}
+    pdir = forge.profile_dir(forge.default_root(), pid_or_err)
+    if not pdir.is_dir():
+        return {"ok": False, "error": f"profile '{name}' not found"}
+    cases = _load_eval_cases(pdir, pid_or_err)
+    return {"ok": True, "name": pid_or_err, "cases": cases}
+
+
+@router.get("/bots/{name}/metrics")
+def get_bot_metrics(name: str, limit: int = Query(default=20, ge=1, le=200)) -> dict[str, Any]:
+    ok_id, pid_or_err = forge.validate_profile_id(name)
+    if not ok_id:
+        return {"ok": False, "error": pid_or_err}
+    pdir = forge.profile_dir(forge.default_root(), pid_or_err)
+    if not pdir.is_dir():
+        return {"ok": False, "error": f"profile '{name}' not found"}
+    state = telemetry.get_metrics(pdir)
+    events: list[dict[str, Any]] = []
+    metrics_file = pdir / "telemetry" / "metrics.jsonl"
+    if metrics_file.is_file():
+        lines = metrics_file.read_text(encoding="utf-8", errors="ignore").splitlines()
+        for raw in reversed(lines[-limit:]):
+            try:
+                item = json.loads(raw)
+                if isinstance(item, dict):
+                    events.append(item)
+            except Exception:
+                continue
+    return {"ok": True, "name": pid_or_err, "state": state, "events": events}
 
 
 @router.get("/bots/{name}/omh")

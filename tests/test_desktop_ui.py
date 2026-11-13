@@ -100,8 +100,22 @@ class DirtyForgeDesktopUITests(unittest.TestCase):
         self.assertTrue(files["ok"])
         self.assertIn("## Task Card", files["soul_md"])
 
-        # Eval, journal, takeover create & resolve, OMH
-        ev = plugin_api.run_bot_eval(bot_name, {})
+        # Eval cases, eval, metrics.jsonl, journal, takeover create & resolve, OMH
+        ec = plugin_api.get_bot_eval_cases(bot_name)
+        self.assertTrue(ec["ok"])
+        self.assertGreaterEqual(len(ec["cases"]), 1)
+
+        from dirty_forge import forge as df_forge
+        from dirty_forge.sentinel import telemetry as df_telemetry
+
+        pdir = df_forge.profile_dir(df_forge.default_root(), bot_name)
+        df_telemetry.record_tool_event(pdir, "terminal", True)
+        mt = plugin_api.get_bot_metrics(bot_name, limit=10)
+        self.assertTrue(mt["ok"])
+        self.assertEqual(len(mt["events"]), 1)
+        self.assertEqual(mt["events"][0]["tool"], "terminal")
+
+        ev = plugin_api.run_bot_eval(bot_name, {"cases": ec["cases"]})
         self.assertTrue(ev["ok"])
 
         jr = plugin_api.add_journal(

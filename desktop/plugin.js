@@ -907,17 +907,90 @@ function InterviewForgeTab({ ctx, onCreated }) {
 
 function EvalsTab({ ctx, bots, selectedBot, setSelectedBot }) {
   const [evalRes, setEvalRes] = useState(null)
+  const [casesJson, setCasesJson] = useState('')
+  const [metricsEvents, setMetricsEvents] = useState([])
   const [busy, setBusy] = useState(false)
 
   const target = selectedBot || bots[0]?.name || ''
 
+  const loadEvalContext = useCallback(async () => {
+    if (!target) return
+    try {
+      const [ec, mt] = await Promise.all([
+        ctx.rest(`/bots/${target}/eval-cases`),
+        ctx.rest(`/bots/${target}/metrics?limit=20`),
+      ])
+      if (ec?.ok && Array.isArray(ec.cases)) {
+        setCasesJson(JSON.stringify(ec.cases, null, 2))
+      }
+      if (mt?.ok && Array.isArray(mt.events)) {
+        setMetricsEvents(mt.events)
+      }
+    } catch {
+      // Ignore transient load errors.
+    }
+  }, [ctx, target])
+
+  useEffect(() => {
+    void loadEvalContext()
+  }, [loadEvalContext])
+
   async function runEval() {
+    if (!target) return
+    let parsedCases = []
+    if (casesJson.trim()) {
+      try {
+        const val = JSON.parse(casesJson)
+        if (!Array.isArray(val)) {
+          notifyError('eval_cases must be a JSON array')
+          return
+        }
+        parsedCases = val
+      } catch (err) {
+        notifyError(`Invalid eval_cases JSON: ${err.message}`)
+        return
+      }
+    }
+    setBusy(true)
+    try {
+      const res = await ctx.rest(`/bots/${target}/eval`, { method: 'POST', body: { cases: parsedCases } })
+      setEvalRes(res)
+      if (res?.ok === false) notifyError(res.error || 'Eval failed')
+    } catch (err) {
+      notifyError(String(err?.message || err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function applySuggestion(suggestion) {
+    if (!target || !suggestion) return
+    setBusy(true)
+    try {
+      const res = await ctx.rest(`/bots/${target}/update`, {
+        method: 'POST',
+        body: { append_soul: suggestion },
+      })
+      if (res?.ok) {
+        notifyInfo('Applied suggestion to SOUL.md — re-running eval')
+        await runEval()
+      } else {
+        notifyError(res?.error || 'Failed to apply suggestion')
+      }
+    } catch (err) {
+      notifyError(String(err?.message || err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function activateAfterEval() {
     if (!target) return
     setBusy(true)
     try {
-      const res = await ctx.rest(`/bots/${target}/eval`, { method: 'POST', body: {} })
-      setEvalRes(res)
-      if (res?.ok === false) notifyError(res.error || 'Eval failed')
+      const res = await ctx.rest(`/bots/${target}/activate`, { method: 'POST', body: { force: false } })
+      if (res?.ok) notifyInfo(`Activated ${target}`)
+      else notifyError(res?.error || 'Activation failed')
     } catch (err) {
       notifyError(String(err?.message || err))
     } finally {
@@ -949,6 +1022,13 @@ function EvalsTab({ ctx, bots, selectedBot, setSelectedBot }) {
             onClick: () => runEval(),
             children: busy ? 'Running Eval…' : 'Run Evaluation Gate',
           }),
+          jsx('button', {
+            type: 'button',
+            className: btnClass('default'),
+            disabled: !target || busy,
+            onClick: () => void loadEvalContext(),
+            children: 'Refresh Metrics & Cases',
+          }),
         ],
       }),
       botObj
@@ -966,17 +1046,43 @@ function EvalsTab({ ctx, bots, selectedBot, setSelectedBot }) {
             ],
           })
         : null,
+      jsxs('details', {
+        className: 'rounded border border-(--ui-border) bg-(--ui-bg-secondary) p-3 text-xs',
+        children: [
+          jsx('summary', { className: 'cursor-pointer font-semibold', children: 'Edit Evaluation Cases (JSON)' }),
+          jsx('textarea', {
+            className: inputClass() + ' mt-2 font-mono text-[11px]',
+            rows: 7,
+            value: casesJson,
+            onChange: (e) => setCasesJson(e.target.value),
+          }),
+        ],
+      }),
       evalRes
         ? jsxs('div', {
             className: 'flex flex-col gap-2 rounded border border-(--ui-border) bg-(--ui-bg-secondary) p-3 text-xs',
             children: [
               jsxs('div', {
-                className: 'flex items-center justify-between',
+                className: 'flex items-center justify-between gap-2',
                 children: [
                   jsx('span', { className: 'font-semibold', children: `Pass Rate: ${Math.round((evalRes.pass_rate || 0) * 100)}%` }),
-                  jsx('span', {
-                    className: badgeClass(evalRes.passed_all ? 'ok' : 'warn'),
-                    children: evalRes.passed_all ? 'PASSED' : 'NEEDS TUNING',
+                  jsxs('div', {
+                    className: 'flex items-center gap-2',
+                    children: [
+                      jsx('span', {
+                        className: badgeClass(evalRes.passed_all ? 'ok' : 'warn'),
+                        children: evalRes.passed_all ? 'PASSED' : 'NEEDS TUNING',
+                      }),
+                      evalRes.passed_all
+                        ? jsx('button', {
+                            type: 'button',
+                            className: btnClass('primary'),
+                            disabled: busy,
+                            onClick: () => void activateAfterEval(),
+                            children: 'Activate Bot',
+                          })
+                        : null,
+                    ],
                   }),
                 ],
               }),
@@ -995,19 +1101,58 @@ function EvalsTab({ ctx, bots, selectedBot, setSelectedBot }) {
               ),
               evalRes.soul_suggestions?.length
                 ? jsxs('div', {
-                    className: 'rounded border border-amber-500/40 bg-amber-500/10 p-2',
+                    className: 'flex flex-col gap-1.5 rounded border border-amber-500/40 bg-amber-500/10 p-2',
                     children: [
-                      jsx('div', { className: 'font-semibold text-amber-300', children: 'SOUL.md Suggestions' }),
-                      jsx('ul', {
-                        className: 'list-disc pl-4 text-[11px]',
-                        children: evalRes.soul_suggestions.map((s, idx) => jsx('li', { children: s }, String(idx))),
-                      }),
+                      jsx('div', { className: 'font-semibold text-amber-300', children: 'SOUL.md Auto-Tune Suggestions' }),
+                      ...evalRes.soul_suggestions.map((s, idx) =>
+                        jsxs(
+                          'div',
+                          {
+                            className: 'flex items-center justify-between gap-2 text-[11px]',
+                            children: [
+                              jsx('span', { children: s }),
+                              jsx('button', {
+                                type: 'button',
+                                className: btnClass('default'),
+                                disabled: busy,
+                                onClick: () => void applySuggestion(s),
+                                children: 'Apply to SOUL.md',
+                              }),
+                            ],
+                          },
+                          String(idx)
+                        )
+                      ),
                     ],
                   })
                 : null,
             ],
           })
         : null,
+      jsxs('div', {
+        className: 'flex flex-col gap-2 rounded border border-(--ui-border) bg-(--ui-bg-secondary) p-3 text-xs',
+        children: [
+          jsx('div', { className: 'font-semibold', children: `Recent Telemetry Events (${metricsEvents.length})` }),
+          metricsEvents.length === 0
+            ? jsx('div', { className: 'text-[11px] text-(--ui-text-tertiary)', children: 'No tool telemetry recorded yet.' })
+            : jsx('div', {
+                className: 'flex max-h-48 flex-col gap-1 overflow-auto',
+                children: metricsEvents.map((ev, idx) =>
+                  jsxs(
+                    'div',
+                    {
+                      className: 'flex items-center justify-between rounded border border-(--ui-border) bg-(--ui-bg-primary) p-2 text-[11px]',
+                      children: [
+                        jsx('span', { children: `${ev.tool || 'tool'} · ${ev.ts || ''}` }),
+                        jsx('span', { className: badgeClass(ev.ok ? 'ok' : 'err'), children: ev.ok ? 'OK' : ev.error || 'ERR' }),
+                      ],
+                    },
+                    String(idx)
+                  )
+                ),
+              }),
+        ],
+      }),
     ],
   })
 }
