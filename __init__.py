@@ -26,6 +26,7 @@ _SETTINGS_KEYS = (
     "allowed_external_clis",
     "circuit_breaker_max_calls",
     "circuit_breaker_max_errors",
+    "strict_intake",
 )
 
 
@@ -53,6 +54,7 @@ def register(ctx: Any) -> None:
     tool_specs = (
         ("dirty_forge_search_blueprints", schemas.SEARCH_BLUEPRINTS, tools.search_blueprints, "🔍", "Search specialist blueprints and SOUL.md metaprompt guide", False),
         ("dirty_forge_fit_test", schemas.FIT_TEST, tools.fit_test, "🧭", "Run 5-question Fit Test before creating a Bot", False),
+        ("dirty_forge_interview", schemas.INTERVIEW, tools.interview, "🎙️", "Run adaptive 5-block discovery interview and build Task Card", False),
         ("dirty_forge_create_bot", schemas.CREATE_BOT, tools.create_bot, "🧪", "Provision a complete Hermes Bot profile", True),
         ("dirty_forge_eval_bot", schemas.EVAL_BOT, tools.eval_bot, "✅", "Run pass/fail evaluation gate on a Bot", False),
         ("dirty_forge_activate_bot", schemas.ACTIVATE_BOT, tools.activate_bot, "🚀", "Activate draft cron routines after eval_bot passes", False),

@@ -339,3 +339,17 @@ BOT_METRICS = {
         "required": ["name"],
     },
 }
+
+INTERVIEW = {
+    "name": "dirty_forge_interview",
+    "description": "Run a stateful, adaptive 5-block discovery interview before creating a Bot. Returns the next missing question with a recommended answer, and generates create_bot_spec + starter eval_cases once complete.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "intake_id": {"type": "string", "description": "Optional existing intake session ID to continue."},
+            "answers": {"type": "object", "description": "Answers collected so far (e.g. role, one_job, target_user, exact_output_format, sources_of_truth, out_of_scope, escalate_when, display_name)."},
+            "include_optional": {"type": "boolean", "description": "Ask optional enrichment questions after required fields (default true)."},
+        },
+        "required": [],
+    },
+}

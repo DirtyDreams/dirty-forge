@@ -7,7 +7,7 @@ import shutil
 import subprocess
 from typing import Any
 
-from . import blueprints, compiler, evals, forge, handoff, journal, omh_memory, policy, portable, takeover, team
+from . import blueprints, compiler, evals, forge, handoff, intake, journal, omh_memory, policy, portable, takeover, team
 from .sentinel import guard, telemetry
 
 
@@ -287,3 +287,13 @@ def bot_metrics(args: dict[str, Any], **kwargs: Any) -> str:
         state = telemetry.reset_breaker(pdir)
         return _json({"ok": True, "bot": pid_or_err, "reset": True, "metrics": state})
     return _json({"ok": True, "bot": pid_or_err, "metrics": telemetry.get_metrics(pdir)})
+
+
+def interview(args: dict[str, Any], **kwargs: Any) -> str:
+    return _json(
+        intake.run_interview(
+            intake_id=str((args or {}).get("intake_id") or ""),
+            answers=(args or {}).get("answers") if isinstance((args or {}).get("answers"), dict) else {},
+            include_optional=bool((args or {}).get("include_optional", True)),
+        )
+    )

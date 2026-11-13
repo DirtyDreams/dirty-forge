@@ -19,7 +19,7 @@ except ImportError:  # pragma: no cover - Windows fallback
 
 import yaml
 
-from . import acks, compiler, journal, policy
+from . import acks, compiler, intake, journal, policy
 from .sentinel.guard import scan_prompt_injection, scan_secrets
 
 BASE_TOOLSETS = ["browser", "clarify", "file", "memory", "session_search", "skills", "todo", "web"]
@@ -303,10 +303,48 @@ def _gateway_check(install_gateway: bool) -> str:
         return "pending (gateway check unavailable)"
 
 
+def _render_task_card_section(card: dict[str, Any]) -> str:
+    fields = (
+        ("Inputs", "inputs"),
+        ("Exact output format", "exact_output_format"),
+        ("Sources of truth", "sources_of_truth"),
+        ("Out of scope", "out_of_scope"),
+        ("Forbidden tools", "forbidden_tools"),
+        ("Good example", "good_example"),
+        ("Bad example to avoid", "bad_example_to_avoid"),
+    )
+    lines: list[str] = []
+    for label, key in fields:
+        val = str(card.get(key) or "").strip()
+        if val:
+            lines.append(f"- **{label}:** {val}")
+    if not lines:
+        return ""
+    return "## Task Card\n" + "\n".join(lines) + "\n"
+
+
 def forge_bot(spec: dict[str, Any], settings: dict[str, Any] | None = None) -> dict[str, Any]:
     settings = settings or {}
     root = Path(spec.get("hermes_root") or default_root()).expanduser()
     launch_profile = str(spec.get("launch_profile") or "default").strip() or "default"
+
+    intake_id = str(spec.get("intake_id") or "").strip()
+    task_card = spec.get("task_card") if isinstance(spec.get("task_card"), dict) else None
+    if intake_id:
+        loaded = intake.load_intake(root, intake_id)
+        if not loaded:
+            return {"ok": False, "error": f"intake session '{intake_id}' not found"}
+        if task_card is None:
+            task_card = loaded.get("answers") if isinstance(loaded.get("answers"), dict) else {}
+
+    if settings.get("strict_intake", False):
+        complete, missing = intake.is_task_card_complete(task_card)
+        if not complete:
+            return {
+                "ok": False,
+                "error": f"strict_intake is enabled: complete dirty_forge_interview first (missing: {', '.join(missing)})",
+            }
+
     display_name = str(spec.get("display_name") or "").strip()
     role = str(spec.get("role") or "").strip()
     if not role:
@@ -363,6 +401,15 @@ def forge_bot(spec: dict[str, Any], settings: dict[str, Any] | None = None) -> d
                 model_cfg=model_cfg,
                 allow_llm_fallback=bool(spec.get("allow_llm_fallback", True)),
             )
+
+            if task_card:
+                tc_block = _render_task_card_section(task_card)
+                if tc_block and "## Task Card" not in raw_soul:
+                    raw_soul = raw_soul.rstrip() + "\n\n" + tc_block
+                (pdir / "intake.json").write_text(
+                    json.dumps({"intake_id": intake_id, "task_card": task_card}, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
 
             soul_secrets = scan_secrets(raw_soul)
             if soul_secrets and not settings.get("allow_secrets", False):

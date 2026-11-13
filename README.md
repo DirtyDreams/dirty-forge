@@ -30,6 +30,7 @@ hermes dirty-forge-doctor
 | Tool | Purpose |
 |---|---|
 | `dirty_forge_fit_test` | 5-question Fit Test + Task Card template before provisioning |
+| `dirty_forge_interview` | Stateful, adaptive 5-block discovery interview; builds Task Card, `create_bot_spec`, and starter `eval_cases` |
 | `dirty_forge_search_blueprints` | Search 279 specialist blueprints + retrieve `SOUL.md` metaprompt guide |
 | `dirty_forge_create_bot` | Provision an isolated Bot profile (`SOUL.md`, `omh` `auto-safe`, `sentinel`, `journal`, `cron`, `draft` mode) |
 | `dirty_forge_eval_bot` | Run pass/fail evaluation cases and save an audit report under `<profile>/evals/` |
@@ -78,6 +79,7 @@ hermes dirty-forge-doctor
 | `allowed_external_clis` | `["codex", "claude", "aider"]` | Executable names permitted for `dirty_forge_delegate_outside` |
 | `circuit_breaker_max_calls` | `40` | Max tool calls before sentinel circuit breaker trips |
 | `circuit_breaker_max_errors` | `5` | Max consecutive tool errors before sentinel circuit breaker trips |
+| `strict_intake` | `false` | Require completed `dirty_forge_interview` (or full `task_card`) before `create_bot` |
 
 ---
 

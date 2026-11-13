@@ -16,6 +16,7 @@ python_dependencies:
 provides_tools:
   - dirty_forge_search_blueprints
   - dirty_forge_fit_test
+  - dirty_forge_interview
   - dirty_forge_create_bot
   - dirty_forge_eval_bot
   - dirty_forge_activate_bot
@@ -117,3 +118,7 @@ config_schema:
     type: int
     default: 5
     description: Maximum consecutive tool errors before the Bot's sentinel circuit breaker trips.
+  strict_intake:
+    type: bool
+    default: false
+    description: Require a completed dirty_forge_interview (or full task_card) before dirty_forge_create_bot can provision a Bot.
