@@ -545,7 +545,7 @@ def list_bots(root: Path | None = None, include_hidden: bool = False) -> list[di
         return []
     bots: list[dict[str, Any]] = []
     for pdir in sorted(base.iterdir()):
-        if not pdir.is_dir():
+        if not pdir.is_dir() or pdir.name.startswith("."):
             continue
         cfg = load_yaml(pdir / "config.yaml")
         meta = cfg.get("bots") if isinstance(cfg.get("bots"), dict) else {}
