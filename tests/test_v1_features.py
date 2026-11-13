@@ -168,6 +168,26 @@ class DirtyForgeV1Tests(unittest.TestCase):
         self.assertEqual(ev["passed"], 1)
         self.assertTrue(Path(ev["report_path"]).is_file())
 
+    def test_draft_mode_and_doctor(self) -> None:
+        from dirty_forge import doctor
+
+        res = json.loads(
+            self.ctx.tools["dirty_forge_create_bot"]["handler"](
+                {
+                    "display_name": "Puck",
+                    "role": "Draft Bot",
+                    "draft": True,
+                    "routines": [{"name": "daily", "schedule": "0 8 * * *", "prompt": "Check inbox"}],
+                }
+            )
+        )
+        self.assertTrue(res["ok"])
+        self.assertFalse(res["routines"][0]["enabled"])
+        doc = doctor.run_doctor()
+        self.assertTrue(doc["ok"])
+        self.assertEqual(doc["bots_total"], 1)
+        self.assertFalse(doc["omh_plugin_installed"])
+
 
 if __name__ == "__main__":
     unittest.main()

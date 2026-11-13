@@ -161,7 +161,9 @@ def _install_sentinel(pdir: Path) -> None:
     shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__"))
 
 
-def _configure_cron(pdir: Path, pid: str, routines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _configure_cron(
+    pdir: Path, pid: str, routines: list[dict[str, Any]], draft: bool = False
+) -> list[dict[str, Any]]:
     if not routines:
         return []
     hermes_bin = shutil.which("hermes")
@@ -180,10 +182,10 @@ def _configure_cron(pdir: Path, pid: str, routines: list[dict[str, Any]]) -> lis
             "name": name,
             "schedule": schedule,
             "prompt": prompt,
-            "enabled": True,
+            "enabled": not draft,
             "created_at": now_iso,
         }
-        if hermes_bin:
+        if hermes_bin and not draft:
             try:
                 subprocess.run(
                     [hermes_bin, "-p", pid, "cron", "add", "--name", name, "--schedule", schedule, "--prompt", prompt],
@@ -321,7 +323,7 @@ def forge_bot(spec: dict[str, Any], settings: dict[str, Any] | None = None) -> d
         if src_user.is_file():
             shutil.copy2(src_user, pdir / "memories" / "USER.md")
 
-        routines = _configure_cron(pdir, pid, spec.get("routines") or [])
+        routines = _configure_cron(pdir, pid, spec.get("routines") or [], draft=bool(spec.get("draft", False)))
         gw_status = _gateway_check(bool(settings.get("install_gateway", True)))
 
         return {

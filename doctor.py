@@ -15,10 +15,12 @@ def run_doctor(settings: dict[str, Any] | None = None) -> dict[str, Any]:
     blueprints_file = Path(__file__).parent / "data" / "blueprints.json"
     bp_count = len(json.loads(blueprints_file.read_text(encoding="utf-8"))) if blueprints_file.is_file() else 0
     drift_count = sum(1 for b in bots if not policy.check_drift(root, forge.profile_dir(root, b["name"]))["in_sync"])
+    omh_installed = (root / "plugins" / "omh" / "plugin.yaml").is_file()
     return {
         "ok": True,
         "hermes_root": str(root),
         "hermes_cli": shutil.which("hermes") or "not found",
+        "omh_plugin_installed": omh_installed,
         "blueprints_indexed": bp_count,
         "bots_total": len(bots),
         "policy_drifted_bots": drift_count,
@@ -33,6 +35,7 @@ def cli(args: Any, settings: dict[str, Any] | None = None) -> int:
     else:
         print(f"DirtyForge Doctor — root: {report['hermes_root']}")
         print(f"  hermes CLI:        {report['hermes_cli']}")
+        print(f"  omh plugin:        {'installed' if report['omh_plugin_installed'] else 'not found in root plugins'}")
         print(f"  blueprints:        {report['blueprints_indexed']}")
         print(f"  bots provisioned:  {report['bots_total']} (policy drift: {report['policy_drifted_bots']})")
     return 0

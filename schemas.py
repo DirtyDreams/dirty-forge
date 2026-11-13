@@ -44,6 +44,7 @@ CREATE_BOT = {
             },
             "omh_memory_mode": {"type": "string", "description": "Override OMH memory mode: auto-safe, review-first, or off."},
             "escalate_to": {"type": "string", "description": "Who makes final calls (default: the user)."},
+            "draft": {"type": "boolean", "description": "If true, keep cron routines disabled until eval_bot passes."},
         },
         "required": ["display_name", "role"],
     },
