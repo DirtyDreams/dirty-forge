@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import re
 from pathlib import Path
+from typing import Any
 
 BEGIN = "<!-- dirty-forge:shared-policy:begin -->"
 END = "<!-- dirty-forge:shared-policy:end -->"
@@ -75,3 +76,19 @@ def check_drift(root: Path, profile_dir: Path) -> dict[str, str | bool]:
         "expected": canonical_fp,
         "actual": actual_fp,
     }
+
+
+def sync_policies(root: Path, profile_dirs: list[Path]) -> dict[str, Any]:
+    canonical_file = ensure_starter_policy(root)
+    canonical_text = canonical_file.read_text(encoding="utf-8")
+    updated: list[str] = []
+    for pdir in profile_dirs:
+        soul_file = pdir / "SOUL.md"
+        if not soul_file.is_file():
+            continue
+        drift = check_drift(root, pdir)
+        if not drift["in_sync"]:
+            new_soul = inject_policy(soul_file.read_text(encoding="utf-8", errors="ignore"), canonical_text)
+            soul_file.write_text(new_soul, encoding="utf-8")
+            updated.append(pdir.name)
+    return {"ok": True, "updated": updated, "count": len(updated)}

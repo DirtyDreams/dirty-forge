@@ -5,10 +5,9 @@ import json
 import os
 import shutil
 import subprocess
-from pathlib import Path
 from typing import Any
 
-from . import blueprints, compiler, forge, journal, policy
+from . import blueprints, compiler, forge, handoff, journal, omh_memory, policy, portable, team
 
 
 def _json(payload: dict[str, Any]) -> str:
@@ -96,21 +95,25 @@ def ask_bot(args: dict[str, Any], **kwargs: Any) -> str:
     question = str((args or {}).get("question") or "").strip()
     if not name or not question:
         return _json({"ok": False, "error": "name and question are required"})
-    pdir = forge.profile_dir(forge.default_root(), name)
+    root = forge.default_root()
+    pdir = forge.profile_dir(root, name)
     if not pdir.is_dir():
         return _json({"ok": False, "error": f"Bot '{name}' not found"})
     hermes_bin = shutil.which("hermes")
     if not hermes_bin:
         return _json({"ok": False, "error": "hermes CLI not found on PATH"})
+    timeout_sec = max(30.0, forge.core_tool_deadline(root) - forge.DEADLINE_MARGIN)
     try:
         proc = subprocess.run(
             [hermes_bin, "-p", name, "chat", "-q", question],
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=timeout_sec,
         )
         reply = (proc.stdout or proc.stderr or "").strip()
         return _json({"ok": proc.returncode == 0, "name": name, "reply": reply[-6000:]})
+    except subprocess.TimeoutExpired:
+        return _json({"ok": False, "error": f"ask_bot timed out after {timeout_sec:.0f}s"})
     except Exception as exc:
         return _json({"ok": False, "error": f"failed asking '{name}': {exc}"})
 
@@ -124,3 +127,79 @@ def hide_bot(args: dict[str, Any], **kwargs: Any) -> str:
 def delete_bot(args: dict[str, Any], settings: dict[str, Any] | None = None, **kwargs: Any) -> str:
     name = str((args or {}).get("name") or "").strip()
     return _json(forge.delete_bot(name, settings=settings))
+
+
+def create_team(args: dict[str, Any], settings: dict[str, Any] | None = None, **kwargs: Any) -> str:
+    spec = dict(args or {})
+    if "launch_profile" not in spec:
+        spec["launch_profile"] = os.environ.get("HERMES_PROFILE", "default")
+    return _json(team.build_team(spec, settings=settings))
+
+
+def handoff_bot(args: dict[str, Any], settings: dict[str, Any] | None = None, **kwargs: Any) -> str:
+    spec = dict(args or {})
+    if "from" not in spec:
+        spec["from"] = os.environ.get("HERMES_PROFILE", "default")
+    return _json(handoff.handoff_bot(spec, settings=settings))
+
+
+def copy_bot(args: dict[str, Any], settings: dict[str, Any] | None = None, **kwargs: Any) -> str:
+    return _json(
+        portable.copy_bot(
+            source_name=str((args or {}).get("source") or ""),
+            new_display_name=str((args or {}).get("display_name") or ""),
+            role=str((args or {}).get("role") or ""),
+            settings=settings,
+        )
+    )
+
+
+def teach_bot(args: dict[str, Any], **kwargs: Any) -> str:
+    return _json(
+        portable.teach_bot(
+            name=str((args or {}).get("name") or ""),
+            skill_name=str((args or {}).get("skill_name") or ""),
+            skill_md=str((args or {}).get("skill_md") or ""),
+        )
+    )
+
+
+def share_bot(args: dict[str, Any], settings: dict[str, Any] | None = None, **kwargs: Any) -> str:
+    allow_secrets = bool((settings or {}).get("allow_secrets", False))
+    return _json(
+        portable.share_bot(
+            name=str((args or {}).get("name") or ""),
+            mode=str((args or {}).get("mode") or "template"),
+            out_path=str((args or {}).get("out_path") or ""),
+            allow_secrets=allow_secrets,
+        )
+    )
+
+
+def import_bot(args: dict[str, Any], settings: dict[str, Any] | None = None, **kwargs: Any) -> str:
+    allow_secrets = bool((settings or {}).get("allow_secrets", False))
+    return _json(
+        portable.import_bot(
+            source_path=str((args or {}).get("source_path") or ""),
+            display_name=str((args or {}).get("display_name") or ""),
+            allow_secrets=allow_secrets,
+            settings=settings,
+        )
+    )
+
+
+def sync_policies(args: dict[str, Any], **kwargs: Any) -> str:
+    root = forge.default_root()
+    bots = forge.list_bots(root=root, include_hidden=True)
+    dirs = [forge.profile_dir(root, b["name"]) for b in bots]
+    return _json(policy.sync_policies(root, dirs))
+
+
+def omh_review(args: dict[str, Any], **kwargs: Any) -> str:
+    return _json(
+        omh_memory.review_omh(
+            name=str((args or {}).get("name") or ""),
+            action=str((args or {}).get("action") or "list"),
+            candidate_id=str((args or {}).get("candidate_id") or ""),
+        )
+    )

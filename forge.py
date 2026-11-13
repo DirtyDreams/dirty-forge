@@ -41,6 +41,22 @@ GENERIC_ROLE_WORDS = {
     "writer",
 }
 PROFILE_DIRS = ("memories", "sessions", "skills", "skins", "logs", "plans", "workspace", "cron", "journal", "plugins")
+CORE_TOOL_DEADLINE = 420.0
+DEADLINE_MARGIN = 20.0
+
+
+def core_tool_deadline(root: Path | None = None) -> float:
+    try:
+        cfg = load_yaml((root or default_root()) / "config.yaml")
+        node = (cfg.get("timeouts") or {}).get("tools") or {}
+        raw = node.get("sequential_call", node.get("concurrent_call"))
+        if raw is not None and not isinstance(raw, bool):
+            val = float(raw)
+            if val == val and val > 0:
+                return val
+    except Exception:
+        pass
+    return CORE_TOOL_DEADLINE
 
 
 def default_root() -> Path:

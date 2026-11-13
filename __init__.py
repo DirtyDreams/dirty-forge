@@ -1,4 +1,4 @@
-"""DirtyForge — Hermes Agent plugin for building complete, hardened Bots."""
+"""DirtyForge — Hermes Agent plugin for building complete, hardened Bots and teams."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,6 +19,7 @@ _SETTINGS_KEYS = (
     "workspace_survey",
     "workspace_roots",
     "install_gateway",
+    "allow_secrets",
     "allow_delete",
     "backup_before_delete",
 )
@@ -45,78 +46,32 @@ def register(ctx: Any) -> None:
                 out[k] = val
         return out
 
-    ctx.register_tool(
-        name="dirty_forge_search_blueprints",
-        toolset="dirty_forge",
-        schema=schemas.SEARCH_BLUEPRINTS,
-        handler=tools.search_blueprints,
-        emoji="🔍",
-        description="Search specialist blueprints and SOUL.md metaprompt guide",
+    tool_specs = (
+        ("dirty_forge_search_blueprints", schemas.SEARCH_BLUEPRINTS, tools.search_blueprints, "🔍", "Search specialist blueprints and SOUL.md metaprompt guide", False),
+        ("dirty_forge_create_bot", schemas.CREATE_BOT, tools.create_bot, "🧪", "Provision a complete Hermes Bot profile", True),
+        ("dirty_forge_create_team", schemas.CREATE_TEAM, tools.create_team, "🧬", "Build a team of Bots with a lead", True),
+        ("dirty_forge_list_bots", schemas.LIST_BOTS, tools.list_bots, "📋", "List Hermes Bots on this machine", False),
+        ("dirty_forge_update_bot", schemas.UPDATE_BOT, tools.update_bot, "✏️", "Update an existing Bot", False),
+        ("dirty_forge_copy_bot", schemas.COPY_BOT, tools.copy_bot, "👯", "Duplicate a Bot under a new name", True),
+        ("dirty_forge_teach_bot", schemas.TEACH_BOT, tools.teach_bot, "🎓", "Teach a Bot a repeatable skill", False),
+        ("dirty_forge_share_bot", schemas.SHARE_BOT, tools.share_bot, "📦", "Export a Bot as a template or backup", True),
+        ("dirty_forge_import_bot", schemas.IMPORT_BOT, tools.import_bot, "📥", "Import a Bot from a template", True),
+        ("dirty_forge_check_bots", schemas.CHECK_BOTS, tools.check_bots, "🩺", "Health & policy-drift check for all Bots", False),
+        ("dirty_forge_sync_policies", schemas.SYNC_POLICIES, tools.sync_policies, "📜", "Propagate shared BOT-POLICY.md to drifted Bots", False),
+        ("dirty_forge_omh_review", schemas.OMH_REVIEW, tools.omh_review, "🧠", "Review queued OMH memory candidates for a Bot", False),
+        ("dirty_forge_journal", schemas.JOURNAL, tools.agent_journal, "📓", "Read or write a Bot's work journal", False),
+        ("dirty_forge_ask_bot", schemas.ASK_BOT, tools.ask_bot, "📨", "Ask another Bot a question", False),
+        ("dirty_forge_handoff_bot", schemas.HANDOFF_BOT, tools.handoff_bot, "🤝", "Hand off task ownership to another Bot", True),
+        ("dirty_forge_hide_bot", schemas.HIDE_BOT, tools.hide_bot, "🙈", "Hide or unhide a Bot in the roster", False),
+        ("dirty_forge_delete_bot", schemas.DELETE_BOT, tools.delete_bot, "🗑️", "Delete a Bot (off unless enabled)", True),
     )
-    ctx.register_tool(
-        name="dirty_forge_create_bot",
-        toolset="dirty_forge",
-        schema=schemas.CREATE_BOT,
-        handler=lambda args, **kw: tools.create_bot(args, settings=settings(), **kw),
-        emoji="🧪",
-        description="Provision a complete Hermes Bot profile",
-    )
-    ctx.register_tool(
-        name="dirty_forge_list_bots",
-        toolset="dirty_forge",
-        schema=schemas.LIST_BOTS,
-        handler=tools.list_bots,
-        emoji="📋",
-        description="List Hermes Bots on this machine",
-    )
-    ctx.register_tool(
-        name="dirty_forge_update_bot",
-        toolset="dirty_forge",
-        schema=schemas.UPDATE_BOT,
-        handler=tools.update_bot,
-        emoji="✏️",
-        description="Update an existing Bot",
-    )
-    ctx.register_tool(
-        name="dirty_forge_check_bots",
-        toolset="dirty_forge",
-        schema=schemas.CHECK_BOTS,
-        handler=tools.check_bots,
-        emoji="🩺",
-        description="Health & policy-drift check for all Bots",
-    )
-    ctx.register_tool(
-        name="dirty_forge_journal",
-        toolset="dirty_forge",
-        schema=schemas.JOURNAL,
-        handler=tools.agent_journal,
-        emoji="📓",
-        description="Read or write a Bot's work journal",
-    )
-    ctx.register_tool(
-        name="dirty_forge_ask_bot",
-        toolset="dirty_forge",
-        schema=schemas.ASK_BOT,
-        handler=tools.ask_bot,
-        emoji="📨",
-        description="Ask another Bot a question",
-    )
-    ctx.register_tool(
-        name="dirty_forge_hide_bot",
-        toolset="dirty_forge",
-        schema=schemas.HIDE_BOT,
-        handler=tools.hide_bot,
-        emoji="🙈",
-        description="Hide or unhide a Bot in the roster",
-    )
-    ctx.register_tool(
-        name="dirty_forge_delete_bot",
-        toolset="dirty_forge",
-        schema=schemas.DELETE_BOT,
-        handler=lambda args, **kw: tools.delete_bot(args, settings=settings(), **kw),
-        emoji="🗑️",
-        description="Delete a Bot (off unless enabled)",
-    )
+
+    for name, schema, handler, emoji, desc, needs_settings in tool_specs:
+        if needs_settings:
+            bound = (lambda h: lambda args, **kw: h(args, settings=settings(), **kw))(handler)
+        else:
+            bound = handler
+        ctx.register_tool(name=name, toolset="dirty_forge", schema=schema, handler=bound, emoji=emoji, description=desc)
 
     if hasattr(ctx, "register_cli_command"):
         ctx.register_cli_command(

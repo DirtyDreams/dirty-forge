@@ -1,9 +1,10 @@
 name: dirty-forge
-version: 0.1.0
-description: Say "make me a <role>" and your Hermes agent builds a complete, working Bot — name, avatar, compiled SOUL.md, OMH auto-safe memory, sentinel guardrails, journal, routines, and gateway — tested and rolled back on failure.
+version: 1.0.0
+description: Say "make me a <role>" and your Hermes agent builds a complete, working Bot or team — name, avatar, compiled SOUL.md, OMH auto-safe memory, sentinel guardrails, journal, handoffs, portability, and gateway — tested and rolled back on failure.
 author: DirtyDreams
 license: MIT
-tags: [bots, bot-mode, profiles, agents, omh, sentinel, metaprompt]
+homepage: https://github.com/DirtyDreams/dirty-forge
+tags: [bots, bot-mode, profiles, agents, multi-agent, omh, sentinel, metaprompt]
 kind: standalone
 requires_hermes: ">=0.21"
 python_dependencies:
@@ -11,11 +12,19 @@ python_dependencies:
 provides_tools:
   - dirty_forge_search_blueprints
   - dirty_forge_create_bot
+  - dirty_forge_create_team
   - dirty_forge_list_bots
   - dirty_forge_update_bot
+  - dirty_forge_copy_bot
+  - dirty_forge_teach_bot
+  - dirty_forge_share_bot
+  - dirty_forge_import_bot
   - dirty_forge_check_bots
+  - dirty_forge_sync_policies
+  - dirty_forge_omh_review
   - dirty_forge_journal
   - dirty_forge_ask_bot
+  - dirty_forge_handoff_bot
   - dirty_forge_hide_bot
   - dirty_forge_delete_bot
 provides_hooks:
@@ -69,7 +78,11 @@ config_schema:
   install_gateway:
     type: bool
     default: true
-    description: Verify live host gateway serving and request hot-rescan when creating a Bot.
+    description: Verify live host gateway serving and request hot-rescan/reload when creating a Bot.
+  allow_secrets:
+    type: bool
+    default: false
+    description: Allow share_bot / import_bot on templates flagged by the secret scanner (operator-only).
   allow_delete:
     type: bool
     default: false

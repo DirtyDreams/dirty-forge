@@ -144,3 +144,111 @@ DELETE_BOT = {
         "required": ["name"],
     },
 }
+
+CREATE_TEAM = {
+    "name": "dirty_forge_create_team",
+    "description": "Build a team of Hermes Bots (optional lead + up to 6 specialists) with per-member rollback and lead roster memory.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "team": {"type": "string", "description": "Team label (e.g. Growth, Platform)."},
+            "lead_name": {"type": "string", "description": "Existing Bot profile name to act as team lead."},
+            "lead": {"type": "object", "description": "Or a create_bot spec to build a new lead Bot."},
+            "members": {"type": "array", "items": {"type": "object"}, "description": "List of specialist Bot specs."},
+        },
+        "required": ["members"],
+    },
+}
+
+HANDOFF_BOT = {
+    "name": "dirty_forge_handoff_bot",
+    "description": "Transfer end-to-end ownership of a task to another Bot with secret scanning, journal logging, and ack tracking.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "to": {"type": "string", "description": "Target Bot profile name."},
+            "task": {"type": "string", "description": "Task description the receiving Bot now owns."},
+            "context": {"type": "string", "description": "Optional context, links, or constraints."},
+        },
+        "required": ["to", "task"],
+    },
+}
+
+COPY_BOT = {
+    "name": "dirty_forge_copy_bot",
+    "description": "Duplicate an existing Bot under a new Proper Case display_name.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "source": {"type": "string", "description": "Existing Bot profile name."},
+            "display_name": {"type": "string", "description": "New Proper Case display name."},
+            "role": {"type": "string", "description": "Optional new role title."},
+        },
+        "required": ["source", "display_name"],
+    },
+}
+
+TEACH_BOT = {
+    "name": "dirty_forge_teach_bot",
+    "description": "Teach a Bot a repeatable skill by writing a validated SKILL.md into its profile.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Target Bot profile name."},
+            "skill_name": {"type": "string", "description": "Skill slug (e.g. weekly-audit)."},
+            "skill_md": {"type": "string", "description": "Full Markdown skill instructions."},
+        },
+        "required": ["name", "skill_name", "skill_md"],
+    },
+}
+
+SHARE_BOT = {
+    "name": "dirty_forge_share_bot",
+    "description": "Export a Bot as a secret-scanned .dirtyforge.json template or a full .tar.gz backup.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Bot profile name."},
+            "mode": {"type": "string", "description": "'template' (default) or 'backup'."},
+            "out_path": {"type": "string", "description": "Optional output file path."},
+        },
+        "required": ["name"],
+    },
+}
+
+IMPORT_BOT = {
+    "name": "dirty_forge_import_bot",
+    "description": "Import a Bot from a secret-scanned .dirtyforge.json template file.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "source_path": {"type": "string", "description": "Path to .dirtyforge.json template."},
+            "display_name": {"type": "string", "description": "Optional override display_name."},
+        },
+        "required": ["source_path"],
+    },
+}
+
+SYNC_POLICIES = {
+    "name": "dirty_forge_sync_policies",
+    "description": "Propagate the canonical shared/BOT-POLICY.md to all Bots whose policy block has drifted.",
+    "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+    },
+}
+
+OMH_REVIEW = {
+    "name": "dirty_forge_omh_review",
+    "description": "List, approve, or reject queued OMH project memory candidates (.omh/memory/candidates) for a Bot.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Bot profile name."},
+            "action": {"type": "string", "description": "'list', 'approve', or 'reject'."},
+            "candidate_id": {"type": "string", "description": "Candidate ID (for approve/reject)."},
+        },
+        "required": ["name", "action"],
+    },
+}
