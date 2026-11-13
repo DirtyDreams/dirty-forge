@@ -1,12 +1,16 @@
 name: dirty-forge
-version: 1.0.0
-description: Say "make me a <role>" and your Hermes agent builds a complete, working Bot or team — name, avatar, compiled SOUL.md, OMH auto-safe memory, sentinel guardrails, journal, handoffs, portability, and gateway — tested and rolled back on failure.
+version: 1.2.0
+manifest_version: 2
+api_version: 1
+description: Say "make me a <role>" and your Hermes agent builds a complete, working Bot or team — name, avatar, compiled SOUL.md, OMH auto-safe memory, sentinel guardrails, circuit breaker, telemetry, journal, handoffs, portability, and gateway — tested and rolled back on failure.
 author: DirtyDreams
 license: MIT
 homepage: https://github.com/DirtyDreams/dirty-forge
 tags: [bots, bot-mode, profiles, agents, multi-agent, omh, sentinel, metaprompt]
 kind: standalone
 requires_hermes: ">=0.21"
+requires_plugins:
+  - id: omh
 python_dependencies:
   - PyYAML>=6.0,<7
 provides_tools:
@@ -28,6 +32,9 @@ provides_tools:
   - dirty_forge_journal
   - dirty_forge_ask_bot
   - dirty_forge_handoff_bot
+  - dirty_forge_request_takeover
+  - dirty_forge_delegate_outside
+  - dirty_forge_bot_metrics
   - dirty_forge_hide_bot
   - dirty_forge_delete_bot
 provides_hooks:
@@ -94,3 +101,19 @@ config_schema:
     type: bool
     default: true
     description: Export a .tar.gz backup archive before deleting a Bot profile.
+  allow_external_delegation:
+    type: bool
+    default: false
+    description: Allow dirty_forge_delegate_outside to invoke allowlisted external CLIs. Off by default.
+  allowed_external_clis:
+    type: list
+    default: ["codex", "claude", "aider"]
+    description: Executable names permitted for dirty_forge_delegate_outside when enabled.
+  circuit_breaker_max_calls:
+    type: int
+    default: 40
+    description: Maximum tool calls before the Bot's sentinel circuit breaker trips.
+  circuit_breaker_max_errors:
+    type: int
+    default: 5
+    description: Maximum consecutive tool errors before the Bot's sentinel circuit breaker trips.

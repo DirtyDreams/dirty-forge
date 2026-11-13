@@ -46,8 +46,11 @@ hermes dirty-forge-doctor
 | `dirty_forge_omh_review` | List, approve, or reject `.omh/memory/candidates/*.json` |
 | `dirty_forge_journal` | Write or read append-only daily work journal entries |
 | `dirty_forge_ask_bot` | Ask another Bot a question (respecting `CORE_TOOL_DEADLINE`) |
-| `dirty_forge_handoff_bot` | Transfer end-to-end task ownership with secret scan, journal, and ack tracking |
-| `dirty_forge_hide_bot` | Hide or unhide a Bot in the roster |
+| `dirty_forge_handoff_bot` | Transfer end-to-end task ownership with secret & prompt-injection scan, journal, and ack tracking |
+| `dirty_forge_request_takeover` | Pause autonomous work and request human operator takeover (`takeovers/` + journal) |
+| `dirty_forge_delegate_outside` | Opt-in delegation to allowlisted external CLIs (`codex`, `claude`, `aider`) |
+| `dirty_forge_bot_metrics` | Inspect per-Bot telemetry (`metrics.jsonl`) or reset a tripped circuit breaker |
+| `dirty_forge_hide_bot` | Hide or unhide a Bot in the roster (syncs `profile.yaml` `ui_meta`) |
 | `dirty_forge_delete_bot` | Permanently delete a Bot (disabled by default; requires `allow_delete: true`, creates `.tar.gz` backup) |
 
 ---
@@ -61,16 +64,20 @@ hermes dirty-forge-doctor
 | `probe_local_models` | `false` | Probe local OpenAI-compatible servers |
 | `omh_memory_mode` | `"auto-safe"` | Default OMH memory mode (`auto-safe`, `review-first`, `off`) |
 | `inherit_plugins` | `["omh"]` | Root plugins copied & enabled in new Bots (without `.env` or secrets) |
-| `enforce_approvals` | `true` | Install `dirty-forge-sentinel` (`pre_tool_call` gate) |
+| `enforce_approvals` | `true` | Install `dirty-forge-sentinel` (`pre_tool_call` gate + circuit breaker) |
 | `journal_enabled` | `true` | Enable append-only daily work journal |
 | `ack_reactions` | `true` | Begin Bot replies with status emoji (`👀`/`💬`/`✅`/`✋`/`⚠️`/`⏳`) |
 | `ack_tapback` | `true` | Desktop message reactions (`pre_llm_call`/`post_llm_call`) |
 | `workspace_survey` | `true` | Shallow read-only workspace survey into `MEMORY.md` |
 | `workspace_roots` | `[]` | Extra workspace roots to survey |
-| `install_gateway` | `true` | Check gateway status and trigger reload |
+| `install_gateway` | `true` | Check gateway status and trigger restart |
 | `allow_secrets` | `false` | Operator-only override for `share_bot`/`import_bot` |
 | `allow_delete` | `false` | Allow `dirty_forge_delete_bot` |
 | `backup_before_delete` | `true` | Export `.tar.gz` backup before deletion |
+| `allow_external_delegation` | `false` | Allow `dirty_forge_delegate_outside` to invoke allowlisted external CLIs |
+| `allowed_external_clis` | `["codex", "claude", "aider"]` | Executable names permitted for `dirty_forge_delegate_outside` |
+| `circuit_breaker_max_calls` | `40` | Max tool calls before sentinel circuit breaker trips |
+| `circuit_breaker_max_errors` | `5` | Max consecutive tool errors before sentinel circuit breaker trips |
 
 ---
 

@@ -165,7 +165,8 @@ def eval_bot(
         except Exception as exc:
             results.append({"id": cid, "kind": kind, "passed": False, "error": str(exc)})
 
-    report = {
+    suggestions = _suggest_soul_fixes(results)
+    report: dict[str, Any] = {
         "bot": pid,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "total": len(results),
@@ -173,6 +174,8 @@ def eval_bot(
         "pass_rate": round(passed / len(results), 3) if results else 0.0,
         "results": results,
     }
+    if suggestions:
+        report["soul_suggestions"] = suggestions
     evals_dir = pdir / "evals"
     evals_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -187,3 +190,22 @@ def eval_bot(
         evidence=str(report_path),
     )
     return {"ok": True, **report, "report_path": str(report_path)}
+
+
+def _suggest_soul_fixes(results: list[dict[str, Any]]) -> list[str]:
+    failed = [r for r in results if not r.get("passed")]
+    if not failed:
+        return []
+    kind_rules = {
+        "missing_data": "Add under `## Escalate`: When required inputs are missing, ask clarifying questions instead of guessing.",
+        "boundary": "Add under `## Never`: Respect hard scope and input boundaries; refuse out-of-bounds requests.",
+        "out_of_scope": "Add under `## Your one job`: Explicitly decline tasks outside your single job and escalate.",
+        "unauthorized_action": "Add under `## Never`: Never invoke send/spend/destroy tools without explicit operator approval.",
+        "typical": "Clarify `## Output Format` and concrete good/bad examples in SOUL.md for core tasks.",
+    }
+    seen: list[str] = []
+    for item in failed:
+        rule = kind_rules.get(str(item.get("kind") or "typical"), kind_rules["typical"])
+        if rule not in seen:
+            seen.append(rule)
+    return seen

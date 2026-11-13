@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from . import forge, journal
-from .sentinel.guard import scan_secrets
+from .sentinel.guard import scan_prompt_injection, scan_secrets
 
 MAX_TASK = 2_000
 MAX_CONTEXT = 8_000
@@ -48,6 +48,9 @@ def handoff_bot(spec: dict[str, Any], settings: dict[str, Any] | None = None) ->
     secrets = scan_secrets(f"{task}\n{context}")
     if secrets:
         return {"ok": False, "error": f"handoff blocked: secret pattern detected ({', '.join(secrets)})"}
+    inj = scan_prompt_injection(f"{task}\n{context}")
+    if inj:
+        return {"ok": False, "error": f"handoff blocked: prompt injection pattern detected ({', '.join(inj)})"}
 
     handoff_id = f"ho-{uuid.uuid4().hex[:10]}"
     handoffs_dir = to_dir / "handoffs"

@@ -34,6 +34,14 @@ _SECRET_PATTERNS = (
     re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"),
 )
 
+_PROMPT_INJECTION_PATTERNS = (
+    ("ignore_instructions", re.compile(r"\bignore\s+(?:all\s+)?(?:previous|prior|above)\s+instructions\b", re.I)),
+    ("system_prompt_override", re.compile(r"\b(?:override|replace|disregard)\s+(?:the\s+)?(?:system\s+prompt|soul\.md|policy)\b", re.I)),
+    ("bypass_guardrails", re.compile(r"\b(?:bypass|disable|turn\s+off)\s+(?:sentinel|approval|guardrails?)\b", re.I)),
+    ("secret_exfiltration", re.compile(r"\b(?:exfiltrate|leak|dump|print)\s+(?:all\s+)?(?:api\s*keys?|tokens?|secrets?|credentials?|\.env)\b", re.I)),
+    ("hidden_html_directive", re.compile(r"<!--[^>]*(?:ignore|override|bypass|system)[^>]*-->", re.I)),
+)
+
 
 def scan_secrets(text: str) -> list[str]:
     """Return a list of matched secret pattern labels without leaking the secret itself."""
@@ -52,6 +60,28 @@ def scan_secrets(text: str) -> list[str]:
         if pattern.search(text):
             findings.append(label)
     return findings
+
+
+def scan_prompt_injection(text: str) -> list[str]:
+    """Detect indirect prompt-injection / memory-poisoning patterns (OWASP Agentic 2026)."""
+    if not text:
+        return []
+    return [label for label, pat in _PROMPT_INJECTION_PATTERNS if pat.search(text)]
+
+
+def redact_text(text: str, ctx: Any = None) -> str:
+    """Scrub secrets via Hermes ctx.redact_text() when available, falling back to regex redaction."""
+    if not text:
+        return ""
+    if ctx is not None and callable(getattr(ctx, "redact_text", None)):
+        try:
+            return str(ctx.redact_text(text))
+        except Exception:
+            pass
+    out = text
+    for pat in _SECRET_PATTERNS:
+        out = pat.sub("[REDACTED]", out)
+    return out
 
 
 def detect_command_injection(tool: str, args: dict[str, Any] | None) -> str | None:

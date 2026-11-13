@@ -20,7 +20,7 @@ except ImportError:  # pragma: no cover - Windows fallback
 import yaml
 
 from . import acks, compiler, journal, policy
-from .sentinel.guard import scan_secrets
+from .sentinel.guard import scan_prompt_injection, scan_secrets
 
 BASE_TOOLSETS = ["browser", "clarify", "file", "memory", "session_search", "skills", "todo", "web"]
 ALL_TOOLSETS = set(BASE_TOOLSETS) | {
@@ -367,6 +367,9 @@ def forge_bot(spec: dict[str, Any], settings: dict[str, Any] | None = None) -> d
             soul_secrets = scan_secrets(raw_soul)
             if soul_secrets and not settings.get("allow_secrets", False):
                 raise ValueError(f"secret pattern detected in SOUL.md ({', '.join(soul_secrets)})")
+            soul_inj = scan_prompt_injection(raw_soul)
+            if soul_inj:
+                raise ValueError(f"prompt injection pattern detected in SOUL.md ({', '.join(soul_inj)})")
 
             canonical_policy_file = policy.ensure_starter_policy(root)
             soul_final = policy.inject_policy(raw_soul, canonical_policy_file.read_text(encoding="utf-8"))
@@ -403,18 +406,54 @@ def forge_bot(spec: dict[str, Any], settings: dict[str, Any] | None = None) -> d
                     "omh_memory_mode": omh_mode,
                 },
             }
+            if isinstance(spec.get("mcp_servers"), dict) and spec["mcp_servers"]:
+                allow_trusted = bool(spec.get("allow_trusted_mcp", False))
+                sanitized_mcp: dict[str, Any] = {}
+                for srv_name, srv_cfg in spec["mcp_servers"].items():
+                    if not isinstance(srv_cfg, dict):
+                        continue
+                    entry = dict(srv_cfg)
+                    if not allow_trusted:
+                        entry["trust"] = "untrusted"
+                    sanitized_mcp[str(srv_name)] = entry
+                if sanitized_mcp:
+                    cfg["mcp_servers"] = sanitized_mcp
             if enforce:
                 cfg["dirty-forge-sentinel"] = {
                     "approve_categories": approve_cats,
                     "limits": spec.get("limits") or {},
+                    "circuit_breaker_max_calls": int(
+                        spec.get("circuit_breaker_max_calls") or settings.get("circuit_breaker_max_calls") or 40
+                    ),
+                    "circuit_breaker_max_errors": int(
+                        spec.get("circuit_breaker_max_errors") or settings.get("circuit_breaker_max_errors") or 5
+                    ),
                 }
             save_yaml(pdir / "config.yaml", cfg)
+
+            section_name = str(spec.get("section_name") or "DirtyForge").strip() or "DirtyForge"
+            section_id = slugify_profile(section_name) or "dirty-forge"
+            save_yaml(
+                pdir / "profile.yaml",
+                {
+                    "bot_title": display_name,
+                    "ui_meta": {
+                        "hermes-bots": {
+                            "title": display_name,
+                            "sectionId": section_id,
+                            "sectionName": section_name,
+                            "avatarKind": avatar,
+                            "hidden": False,
+                        }
+                    },
+                },
+            )
 
             # Memory & USER.md
             mem_lines: list[str] = [f"# {display_name} Memory\n"]
             for fact in spec.get("memory") or []:
                 fact_s = str(fact).strip()
-                if fact_s and not scan_secrets(fact_s):
+                if fact_s and not scan_secrets(fact_s) and not scan_prompt_injection(fact_s):
                     mem_lines.append(f"- {fact_s}")
             if settings.get("workspace_survey", True):
                 for note in _shallow_workspace_survey(settings.get("workspace_roots")):
@@ -494,6 +533,9 @@ def update_bot(name: str, changes: dict[str, Any], root: Path | None = None) -> 
         secrets = scan_secrets(soul_append)
         if secrets:
             return {"ok": False, "error": f"secret pattern detected in soul_append ({', '.join(secrets)})"}
+        inj = scan_prompt_injection(soul_append)
+        if inj:
+            return {"ok": False, "error": f"prompt injection pattern detected in soul_append ({', '.join(inj)})"}
 
     cfg = load_yaml(pdir / "config.yaml")
     bots_meta = cfg.setdefault("bots", {})
@@ -516,6 +558,17 @@ def update_bot(name: str, changes: dict[str, Any], root: Path | None = None) -> 
         cfg["toolsets"] = sorted(set(BASE_TOOLSETS) | set(allowed_extra))
     save_yaml(pdir / "config.yaml", cfg)
 
+    prof_path = pdir / "profile.yaml"
+    if prof_path.is_file():
+        prof = load_yaml(prof_path)
+        ui = prof.setdefault("ui_meta", {}).setdefault("hermes-bots", {})
+        if changes.get("display_name"):
+            prof["bot_title"] = bots_meta["title"]
+            ui["title"] = bots_meta["title"]
+        if changes.get("avatar_kind") in AVATAR_KINDS:
+            ui["avatarKind"] = bots_meta["avatar_kind"]
+        save_yaml(prof_path, prof)
+
     soul_path = pdir / "SOUL.md"
     if soul_append and soul_path.is_file():
         current = soul_path.read_text(encoding="utf-8")
@@ -537,6 +590,11 @@ def hide_bot(name: str, hidden: bool = True, root: Path | None = None) -> dict[s
     cfg = load_yaml(pdir / "config.yaml")
     cfg.setdefault("bots", {})["hidden"] = bool(hidden)
     save_yaml(pdir / "config.yaml", cfg)
+    prof_path = pdir / "profile.yaml"
+    if prof_path.is_file():
+        prof = load_yaml(prof_path)
+        prof.setdefault("ui_meta", {}).setdefault("hermes-bots", {})["hidden"] = bool(hidden)
+        save_yaml(prof_path, prof)
     return {"ok": True, "name": pdir.name, "hidden": bool(hidden)}
 
 

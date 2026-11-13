@@ -7,7 +7,8 @@ import shutil
 import subprocess
 from typing import Any
 
-from . import blueprints, compiler, evals, forge, handoff, journal, omh_memory, policy, portable, team
+from . import blueprints, compiler, evals, forge, handoff, journal, omh_memory, policy, portable, takeover, team
+from .sentinel import guard, telemetry
 
 
 def _json(payload: dict[str, Any]) -> str:
@@ -54,6 +55,7 @@ def check_bots(args: dict[str, Any], **kwargs: Any) -> str:
         drift = policy.check_drift(root, pdir)
         omh_cfg = pdir / ".omh" / "setup-profile.json"
         sentinel_dir = pdir / "plugins" / "dirty-forge-sentinel"
+        metrics = telemetry._load_state(pdir)
         report.append(
             {
                 "name": bot["name"],
@@ -63,6 +65,11 @@ def check_bots(args: dict[str, Any], **kwargs: Any) -> str:
                 "omh_configured": omh_cfg.is_file(),
                 "omh_memory_mode": bot["omh_memory_mode"],
                 "sentinel_installed": sentinel_dir.is_dir(),
+                "telemetry": {
+                    "total_calls": metrics.get("total_calls", 0),
+                    "consecutive_errors": metrics.get("consecutive_errors", 0),
+                    "breaker_tripped": metrics.get("breaker_tripped", False),
+                },
             }
         )
     return _json({"ok": True, "count": len(report), "bots": report})
@@ -102,6 +109,12 @@ def ask_bot(args: dict[str, Any], **kwargs: Any) -> str:
     question = str((args or {}).get("question") or "").strip()
     if not name or not question:
         return _json({"ok": False, "error": "name and question are required"})
+    sec = guard.scan_secrets(question)
+    if sec:
+        return _json({"ok": False, "error": f"ask_bot blocked: secret pattern detected ({', '.join(sec)})"})
+    inj = guard.scan_prompt_injection(question)
+    if inj:
+        return _json({"ok": False, "error": f"ask_bot blocked: prompt injection pattern detected ({', '.join(inj)})"})
     root = forge.default_root()
     pdir = forge.profile_dir(root, name)
     if not pdir.is_dir():
@@ -239,3 +252,38 @@ def activate_bot(args: dict[str, Any], **kwargs: Any) -> str:
             force=bool((args or {}).get("force", False)),
         )
     )
+
+
+def request_takeover(args: dict[str, Any], **kwargs: Any) -> str:
+    return _json(
+        takeover.request_takeover(
+            name=str((args or {}).get("name") or ""),
+            reason=str((args or {}).get("reason") or ""),
+            context=str((args or {}).get("context") or ""),
+        )
+    )
+
+
+def delegate_outside(args: dict[str, Any], settings: dict[str, Any] | None = None, **kwargs: Any) -> str:
+    return _json(
+        takeover.delegate_outside(
+            cli=str((args or {}).get("cli") or ""),
+            task=str((args or {}).get("task") or ""),
+            cwd=str((args or {}).get("cwd") or ""),
+            settings=settings,
+        )
+    )
+
+
+def bot_metrics(args: dict[str, Any], **kwargs: Any) -> str:
+    name = str((args or {}).get("name") or "").strip()
+    ok_id, pid_or_err = forge.validate_profile_id(name, allow_default=False)
+    if not ok_id:
+        return _json({"ok": False, "error": pid_or_err})
+    pdir = forge.profile_dir(forge.default_root(), pid_or_err)
+    if not pdir.is_dir():
+        return _json({"ok": False, "error": f"Bot '{name}' not found"})
+    if bool((args or {}).get("reset_breaker", False)):
+        state = telemetry.reset_breaker(pdir)
+        return _json({"ok": True, "bot": pid_or_err, "reset": True, "metrics": state})
+    return _json({"ok": True, "bot": pid_or_err, "metrics": telemetry.get_metrics(pdir)})

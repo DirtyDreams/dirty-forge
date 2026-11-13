@@ -22,6 +22,10 @@ _SETTINGS_KEYS = (
     "allow_secrets",
     "allow_delete",
     "backup_before_delete",
+    "allow_external_delegation",
+    "allowed_external_clis",
+    "circuit_breaker_max_calls",
+    "circuit_breaker_max_errors",
 )
 
 
@@ -65,6 +69,9 @@ def register(ctx: Any) -> None:
         ("dirty_forge_journal", schemas.JOURNAL, tools.agent_journal, "📓", "Read or write a Bot's work journal", False),
         ("dirty_forge_ask_bot", schemas.ASK_BOT, tools.ask_bot, "📨", "Ask another Bot a question", False),
         ("dirty_forge_handoff_bot", schemas.HANDOFF_BOT, tools.handoff_bot, "🤝", "Hand off task ownership to another Bot", True),
+        ("dirty_forge_request_takeover", schemas.REQUEST_TAKEOVER, tools.request_takeover, "🙋", "Request human operator takeover for a Bot", False),
+        ("dirty_forge_delegate_outside", schemas.DELEGATE_OUTSIDE, tools.delegate_outside, "🔌", "Delegate a task to an allowlisted external CLI", True),
+        ("dirty_forge_bot_metrics", schemas.BOT_METRICS, tools.bot_metrics, "📊", "Inspect or reset per-Bot telemetry and circuit breaker", False),
         ("dirty_forge_hide_bot", schemas.HIDE_BOT, tools.hide_bot, "🙈", "Hide or unhide a Bot in the roster", False),
         ("dirty_forge_delete_bot", schemas.DELETE_BOT, tools.delete_bot, "🗑️", "Delete a Bot (off unless enabled)", True),
     )

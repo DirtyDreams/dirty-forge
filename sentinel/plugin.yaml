@@ -1,7 +1,8 @@
 name: dirty-forge-sentinel
-version: 0.1.0
-description: Deterministic pre_tool_call safety gate for DirtyForge Bots (send/spend/destroy, argument limits, command-injection detection, and secret scanning).
+version: 0.2.0
+description: Deterministic pre_tool_call safety gate, post_tool_call telemetry, and circuit breaker for DirtyForge Bots.
 kind: standalone
 requires_hermes: ">=0.21"
 provides_hooks:
   - pre_tool_call
+  - post_tool_call

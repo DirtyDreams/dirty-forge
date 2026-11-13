@@ -298,3 +298,44 @@ ACTIVATE_BOT = {
         "required": ["name"],
     },
 }
+
+REQUEST_TAKEOVER = {
+    "name": "dirty_forge_request_takeover",
+    "description": "Pause autonomous work and request human operator takeover for a Bot, recording context and a journal blocker.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Bot profile name."},
+            "reason": {"type": "string", "description": "Why human intervention is needed."},
+            "context": {"type": "string", "description": "Optional diagnostic or state summary."},
+        },
+        "required": ["name", "reason"],
+    },
+}
+
+DELEGATE_OUTSIDE = {
+    "name": "dirty_forge_delegate_outside",
+    "description": "Delegate a bounded task to an allowlisted external CLI (e.g. codex, claude, aider). Disabled unless allow_external_delegation=true.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "cli": {"type": "string", "description": "Allowlisted external CLI executable name."},
+            "task": {"type": "string", "description": "Task prompt to send to the external CLI."},
+            "cwd": {"type": "string", "description": "Optional working directory."},
+        },
+        "required": ["cli", "task"],
+    },
+}
+
+BOT_METRICS = {
+    "name": "dirty_forge_bot_metrics",
+    "description": "Inspect per-Bot tool telemetry and circuit breaker state, or reset a tripped circuit breaker.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Bot profile name."},
+            "reset_breaker": {"type": "boolean", "description": "If true, reset a tripped circuit breaker and counters."},
+        },
+        "required": ["name"],
+    },
+}
