@@ -20,6 +20,8 @@ _CMD_INJECTION_PATTERNS = (
     re.compile(r"\$\([^)]+\)"),
     re.compile(r"`[^`]+`"),
     re.compile(r"(?:^|[;&|])\s*(?:curl|wget|nc|ncat|socat)\b[^|]*\|\s*(?:sh|bash|zsh|python\d?)\b", re.I),
+    re.compile(r"\bbase64\s+(?:-d|--decode)\b[^|]*\|\s*(?:sh|bash|zsh)\b", re.I),
+    re.compile(r"(?:^|[;&|])\s*eval\s+", re.I),
     re.compile(r"(?:^|[;&|])\s*rm\s+-rf\s+/(?:\s|$)", re.I),
 )
 

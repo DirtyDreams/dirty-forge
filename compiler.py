@@ -73,6 +73,24 @@ def _render_deterministic_soul(
     )
 
 
+def _resolve_api_key(model_cfg: dict[str, Any]) -> str:
+    if model_cfg.get("api_key"):
+        return str(model_cfg["api_key"]).strip()
+    import os
+
+    provider = str(model_cfg.get("provider") or "").strip().lower()
+    env_candidates = {
+        "openrouter": ("OPENROUTER_API_KEY",),
+        "anthropic": ("ANTHROPIC_API_KEY",),
+        "openai": ("OPENAI_API_KEY",),
+    }.get(provider, ("OPENAI_API_KEY", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY"))
+    for var in env_candidates:
+        val = os.environ.get(var, "").strip()
+        if val:
+            return val
+    return ""
+
+
 def _try_llm_compile(prompt: str, model_cfg: dict[str, Any] | None) -> str | None:
     if not model_cfg or not model_cfg.get("base_url") or not model_cfg.get("default"):
         return None
@@ -86,10 +104,14 @@ def _try_llm_compile(prompt: str, model_cfg: dict[str, Any] | None) -> str | Non
         ],
         "temperature": 0.3,
     }
+    headers = {"Content-Type": "application/json"}
+    api_key = _resolve_api_key(model_cfg)
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:

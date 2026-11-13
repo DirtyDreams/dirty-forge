@@ -145,19 +145,40 @@ def _install_sentinel(pdir: Path) -> None:
     shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__"))
 
 
-def _configure_cron(pdir: Path, routines: list[dict[str, Any]]) -> list[dict[str, str]]:
+def _configure_cron(pdir: Path, pid: str, routines: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not routines:
         return []
-    valid: list[dict[str, str]] = []
+    hermes_bin = shutil.which("hermes")
+    valid: list[dict[str, Any]] = []
+    now_iso = datetime.now(timezone.utc).isoformat()
     for idx, item in enumerate(routines):
         if not isinstance(item, dict):
             continue
         schedule = str(item.get("schedule") or "").strip()
         prompt = str(item.get("prompt") or "").strip()
         name = str(item.get("name") or f"routine-{idx + 1}").strip()
-        if schedule and prompt:
-            valid.append({"name": name, "schedule": schedule, "prompt": prompt})
-    if valid:
+        if not (schedule and prompt):
+            continue
+        entry: dict[str, Any] = {
+            "id": f"{pid}-{idx + 1}",
+            "name": name,
+            "schedule": schedule,
+            "prompt": prompt,
+            "enabled": True,
+            "created_at": now_iso,
+        }
+        if hermes_bin:
+            try:
+                subprocess.run(
+                    [hermes_bin, "-p", pid, "cron", "add", "--name", name, "--schedule", schedule, "--prompt", prompt],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+            except Exception:
+                pass
+        valid.append(entry)
+    if valid and not (pdir / "cron" / "jobs.json").exists():
         (pdir / "cron" / "jobs.json").write_text(json.dumps(valid, indent=2) + "\n", encoding="utf-8")
     return valid
 
@@ -171,7 +192,8 @@ def _gateway_check(install_gateway: bool) -> str:
     try:
         proc = subprocess.run([hermes_bin, "gateway", "status"], capture_output=True, text=True, timeout=5)
         if proc.returncode == 0:
-            return "active"
+            reload_proc = subprocess.run([hermes_bin, "gateway", "reload"], capture_output=True, text=True, timeout=5)
+            return "reloaded" if reload_proc.returncode == 0 else "active"
         return "pending (gateway not running)"
     except Exception:
         return "pending (gateway check unavailable)"
@@ -283,7 +305,7 @@ def forge_bot(spec: dict[str, Any], settings: dict[str, Any] | None = None) -> d
         if src_user.is_file():
             shutil.copy2(src_user, pdir / "memories" / "USER.md")
 
-        routines = _configure_cron(pdir, spec.get("routines") or [])
+        routines = _configure_cron(pdir, pid, spec.get("routines") or [])
         gw_status = _gateway_check(bool(settings.get("install_gateway", True)))
 
         return {

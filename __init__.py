@@ -24,11 +24,23 @@ _SETTINGS_KEYS = (
 )
 
 
+def _cfg_get(ctx: Any, key: str, default: Any = None) -> Any:
+    if hasattr(ctx, "get_config"):
+        return ctx.get_config(key, default=default)
+    from . import forge
+
+    cfg = forge.load_yaml(forge.default_root() / "config.yaml")
+    plugin_cfg = cfg.get("dirty-forge") or cfg.get("dirty_forge") or {}
+    if isinstance(plugin_cfg, dict) and key in plugin_cfg:
+        return plugin_cfg[key]
+    return default
+
+
 def register(ctx: Any) -> None:
     def settings() -> dict[str, Any]:
         out: dict[str, Any] = {}
         for k in _SETTINGS_KEYS:
-            val = ctx.get_config(k, default=None)
+            val = _cfg_get(ctx, k, default=None)
             if val is not None:
                 out[k] = val
         return out
@@ -114,7 +126,7 @@ def register(ctx: Any) -> None:
             handler_fn=lambda a: doctor.cli(a, settings=settings()),
         )
 
-    marks = tapback.Tapback(ctx, lambda: ctx.get_config("ack_tapback", default=True) is not False)
+    marks = tapback.Tapback(ctx, lambda: _cfg_get(ctx, "ack_tapback", default=True) is not False)
     ctx.register_hook("pre_llm_call", marks.on_turn_start)
     ctx.register_hook("post_llm_call", marks.on_turn_end)
 
