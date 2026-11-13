@@ -83,9 +83,18 @@ hermes dirty-forge-doctor
 
 ---
 
+## Hermes Desktop UI
+
+DirtyForge ships as a unified Hermes package with a native **Hermes Desktop** UI:
+- `desktop/plugin.js` — uncompiled ESM plugin using `@hermes/plugin-sdk` (`ROUTES_AREA` `/dirty-forge`, `SIDEBAR_NAV_AREA`, `STATUSBAR_AREAS.right`, `PALETTE_AREA`, and `Settings → Plugins → DirtyForge`).
+- `dashboard/plugin_api.py` — FastAPI router mounted at `/api/plugins/dirty-forge/` powering **Roster & Health**, **Interview & Forge**, **Evals & Telemetry**, and **Governance (OMH / Takeovers / Journal)**.
+
+---
+
 ## Development & Tests
 
 ```bash
 python3 -m unittest discover -s tests -v
 uvx ruff check .
+node --check desktop/plugin.js
 ```
