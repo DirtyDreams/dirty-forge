@@ -707,6 +707,17 @@ def forge_bot(spec: dict[str, Any], settings: dict[str, Any] | None = None) -> d
             return {"ok": False, "error": f"provisioning failed and rolled back: {exc}"}
 
 
+def _is_tombstoned(root: Path, pdir: Path) -> bool:
+    """True when this directory is a deleted profile Hermes recreated as an empty shell.
+
+    A deleted profile leaves a marker under ``profiles/.deleted/<name>``; a live gateway that still
+    held the old handles then recreates the directory with nothing in it. Hermes skips those in its
+    own roster (``named_profile_is_deleted``), so a roster that lists them reports Bots that have no
+    config, no SOUL and no model — the operator sees ghosts.
+    """
+    return (root / "profiles" / ".deleted" / pdir.name).exists()
+
+
 def list_bots(root: Path | None = None, include_hidden: bool = False) -> list[dict[str, Any]]:
     base = (root or default_root()) / "profiles"
     if not base.is_dir():
@@ -714,6 +725,8 @@ def list_bots(root: Path | None = None, include_hidden: bool = False) -> list[di
     bots: list[dict[str, Any]] = []
     for pdir in sorted(base.iterdir()):
         if not pdir.is_dir() or pdir.name.startswith("."):
+            continue
+        if _is_tombstoned(root or default_root(), pdir):
             continue
         cfg = load_yaml(pdir / "config.yaml")
         # profile.yaml is the roster truth: it is what Hermes' own roster and Desktop read, so a

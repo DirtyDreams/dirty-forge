@@ -121,6 +121,22 @@ class ProvisioningTests(unittest.TestCase):
         self.assertIn("outside the requested root", err)
         self.assertFalse(stray.exists(), "the stray profile it created was left behind")
 
+    def test_tombstoned_profiles_are_not_bots(self) -> None:
+        # A deleted profile leaves profiles/.deleted/<name>; a live gateway that still held the old
+        # handles recreates the directory as an empty shell. Listing it reports a Bot with no config,
+        # no SOUL and no model — exactly what the operator saw as "gateprobe came back".
+        ghost = forge.profile_dir(self.root, "ghost")
+        ghost.mkdir(parents=True)
+        (self.root / "profiles" / ".deleted").mkdir(parents=True, exist_ok=True)
+        (self.root / "profiles" / ".deleted" / "ghost").write_text("deleted\n", encoding="utf-8")
+        live = forge.profile_dir(self.root, "puck")
+        live.mkdir(parents=True)
+        (live / "config.yaml").write_text("model: {}\n", encoding="utf-8")
+
+        names = [b["name"] for b in forge.list_bots(root=self.root)]
+        self.assertIn("puck", names)
+        self.assertNotIn("ghost", names, "a tombstoned profile was listed as a Bot")
+
     def test_blueprint_router_matches_roles_not_letters(self) -> None:
         from dirty_forge import blueprints
 
