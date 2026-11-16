@@ -37,7 +37,8 @@ hermes dirty-forge-doctor
 | `dirty_forge_activate_bot` | Enable `draft` cron routines after `eval_bot` passes 100% (or with `force=true`) |
 | `dirty_forge_create_team` | Build a lead Bot + up to 6 specialists with per-member rollback |
 | `dirty_forge_list_bots` | List existing Bot profiles |
-| `dirty_forge_update_bot` | Update `display_name`, `avatar_kind`, `toolsets`, or append to `SOUL.md` |
+| `dirty_forge_update_bot` | Update `display_name`, `avatar_kind`, `toolsets`, or `soul_append` / `soul_replace` — snapshots first and returns the diff |
+| `dirty_forge_rollback` | Restore a Bot from its newest (or a named) snapshot; the rollback is itself undoable |
 | `dirty_forge_copy_bot` | Clone an existing Bot and its taught skills under a new identity |
 | `dirty_forge_teach_bot` | Teach a `SKILL.md` (with privilege-escalation & secret scanning + >3 skill warning) |
 | `dirty_forge_share_bot` | Export a secret-scanned `.dirtyforge.json` template or `.tar.gz` backup |
@@ -83,11 +84,14 @@ hermes dirty-forge-doctor
 
 ---
 
-## Hermes Desktop UI
+## Where it runs
 
-DirtyForge ships as a unified Hermes package with a native **Hermes Desktop** UI:
-- `desktop/plugin.js` — uncompiled ESM plugin using `@hermes/plugin-sdk` (`ROUTES_AREA` `/dirty-forge`, `SIDEBAR_NAV_AREA`, `STATUSBAR_AREAS.right`, `PALETTE_AREA`, and `Settings → Plugins → DirtyForge`).
-- `dashboard/plugin_api.py` — FastAPI router mounted at `/api/plugins/dirty-forge/` powering **Roster & Health**, **Interview & Forge**, **Evals & Telemetry**, and **Governance (OMH / Takeovers / Journal)**.
+DirtyForge is the bot-builder agent's toolkit, not a dashboard. It lives in a dedicated Hermes
+profile (`forge`) so one owner holds the whole Bot lifecycle, and every surface is a conversation:
+say what Bot you want and it is built, say what should change and it is edited.
+
+There is no plugin tab and no plugin backend route. The roster is Hermes' own — Desktop reads it
+from `profiles.list` and each profile's `profile.yaml` `ui_meta`, which this plugin writes.
 
 ---
 
@@ -96,5 +100,4 @@ DirtyForge ships as a unified Hermes package with a native **Hermes Desktop** UI
 ```bash
 python3 -m unittest discover -s tests -v
 uvx ruff check .
-node --check desktop/plugin.js
 ```

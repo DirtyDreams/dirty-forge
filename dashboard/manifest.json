@@ -1,9 +1,0 @@
-{
-  "name": "dirty-forge",
-  "api": "plugin_api.py",
-  "label": "DirtyForge",
-  "icon": "hubot",
-  "tab": {
-    "hidden": true
-  }
-}

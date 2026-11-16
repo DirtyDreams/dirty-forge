@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import contextlib
+import difflib
 import json
 import os
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
@@ -72,8 +75,15 @@ def core_tool_deadline(root: Path | None = None) -> float:
 
 
 def default_root() -> Path:
+    """The Hermes root that holds ``profiles/``, not the profile we happen to run in.
+
+    This plugin now runs inside the `forge` profile, whose HERMES_HOME is
+    ``<root>/profiles/forge``: trusting it blindly put the Bots it creates inside its own profile
+    directory. A ``profiles`` parent means we were handed a profile home; the root is one level up.
+    """
     env_home = os.environ.get("HERMES_HOME", "").strip()
-    return Path(env_home).expanduser() if env_home else Path.home() / ".hermes"
+    path = Path(env_home).expanduser() if env_home else Path.home() / ".hermes"
+    return path.parent.parent if path.parent.name == "profiles" else path
 
 
 def validate_profile_id(name: str, allow_default: bool = False) -> tuple[bool, str]:
@@ -217,6 +227,114 @@ def _copy_inherited_plugins(root: Path, launch_profile: str, pdir: Path, names: 
     return copied
 
 
+_ASSISTANT_NAMING = re.compile(
+    r"\b(call|calls|called|name|names|named)\b.{0,40}\bassistant\b|\bassistant\b.{0,40}\b(name|named|called)\b",
+    re.I,
+)
+
+
+def _filter_user_memory(text: str, other_names: set[str]) -> str:
+    """Keep the facts about the user, drop entries naming an assistant (they make a bot adopt its name)."""
+    keep: list[str] = []
+    for entry in (e.strip() for e in text.split("§")):
+        if not entry or _ASSISTANT_NAMING.search(entry):
+            continue
+        if any(
+            re.search(rf"\b{re.escape(n)}\b", entry, re.I) and re.search(r"\bname", entry, re.I)
+            for n in other_names
+            if n
+        ):
+            continue
+        keep.append(entry)
+    return "\n§\n".join(keep) + ("\n" if keep else "")
+
+
+def _hermes_root_resolves_to(root: Path) -> bool:
+    """Does Hermes' own root resolution land on *root*? Only then may we let it create the profile.
+
+    Hermes resolves its home through ``hermes_constants``, never straight from ``HERMES_HOME``: a
+    temp root handed to it silently falls back to the real ``~/.hermes``, which is how a test run
+    once filed sixteen Bots into the operator's own profiles directory.
+    """
+    try:
+        import hermes_constants
+
+        return hermes_constants.get_default_hermes_root().resolve() == root.resolve()
+    except Exception:
+        return False
+
+
+def _provision_profile(root: Path, pid: str, description: str) -> str:
+    """Create the profile through Hermes' provisioning. ``""`` means made; ``"skip"`` means "lay it out here".
+
+    Returns ``"skip"`` when Hermes would not resolve this root (tests, scratch homes) — the caller
+    then writes the layout itself, and that is the only case where it still does.
+    """
+    if not _hermes_root_resolves_to(root):
+        return "skip"
+    plugin_dir = Path(__file__).parent.resolve()
+    parked = [p for p in sys.path if Path(p or ".").resolve() == plugin_dir]  # our tools.py shadows core
+    for p in parked:
+        sys.path.remove(p)
+    try:
+        from hermes_cli.profile_provision import ProfileCreateRequest, provision_profile
+
+        result = provision_profile(
+            ProfileCreateRequest(
+                name=pid,
+                description=description or None,
+                alias=False,  # a wrapper belongs to the operator's PATH; forge names profiles, not commands
+                mirror_credentials=True,
+                share_auth=True,
+                quiet=True,
+            )
+        )
+    except ImportError:
+        return "skip"
+    except Exception as exc:  # a refusal (name taken, bad model): report it, never retry blindly
+        return f"profile create failed: {exc}"
+    finally:
+        sys.path[:0] = parked
+    if result.path.resolve() != profile_dir(root, pid).resolve():
+        return f"profile landed outside the requested root ({result.path})"
+    return ""
+
+
+KICKOFF = "Hey, tell me about yourself!"
+
+
+def _kickoff_check(root: Path, pid: str, settings: dict[str, Any]) -> str:
+    """Send the Bot its first message and return "" (it answered) or the reason it did not.
+
+    Same first message Desktop's New Agent sends. Cheap because a Bot whose model cannot sign in
+    is otherwise reported as a success and discovered broken by the operator.
+    """
+    hermes_bin = shutil.which("hermes")
+    if not hermes_bin:
+        return "kickoff skipped: hermes CLI not on PATH"
+    if not _hermes_root_resolves_to(root):
+        return "kickoff skipped: this root is not one Hermes resolves"
+    env = {k: v for k, v in os.environ.items() if not k.startswith("HERMES_")}
+    env["HERMES_HOME"] = str(root)
+    timeout = max(30.0, core_tool_deadline(root) - DEADLINE_MARGIN)
+    try:
+        proc = subprocess.run(
+            [hermes_bin, "-p", pid, "chat", "-q", KICKOFF],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return f"kickoff did not finish in {timeout:.0f}s"
+    except Exception as exc:
+        return f"kickoff failed: {exc}"
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout or "").strip().splitlines()
+        return f"kickoff failed ({tail[-1] if tail else 'no output'})"
+    return ""
+
+
 def _install_sentinel(pdir: Path) -> None:
     src = Path(__file__).parent / "sentinel"
     dst = pdir / "plugins" / "dirty-forge-sentinel"
@@ -252,7 +370,8 @@ def _configure_cron(
         if hermes_bin and not draft:
             try:
                 proc = subprocess.run(
-                    [hermes_bin, "-p", pid, "cron", "add", schedule, prompt, "--name", name],
+                    [hermes_bin, "-p", pid, "cron", "add", schedule, prompt, "--name", name,
+                     "--deliver", f"bot-chat:{pid}"],
                     capture_output=True,
                     text=True,
                     timeout=10,
@@ -366,8 +485,16 @@ def forge_bot(spec: dict[str, Any], settings: dict[str, Any] | None = None) -> d
 
         created_routines: list[dict[str, Any]] = []
         try:
-            for d in PROFILE_DIRS:
-                (pdir / d).mkdir(parents=True, exist_ok=True)
+            provisioned = _provision_profile(
+                root, pid, description=f"{role}: {str(spec.get('description') or '').strip()}".strip(": ")
+            )
+            if provisioned.startswith("profile "):
+                raise RuntimeError(provisioned)
+            if provisioned == "skip":
+                # A root Hermes itself will not resolve (a scratch or test home): lay the layout out
+                # here, since nothing else can. The real root always goes through provisioning.
+                for d in PROFILE_DIRS:
+                    (pdir / d).mkdir(parents=True, exist_ok=True)
 
             launch_cfg = load_yaml(profile_dir(root, launch_profile) / "config.yaml")
             model_cfg = spec.get("model")
@@ -440,19 +567,13 @@ def forge_bot(spec: dict[str, Any], settings: dict[str, Any] | None = None) -> d
                 _install_sentinel(pdir)
                 enabled_plugins.append("dirty-forge-sentinel")
 
-            cfg: dict[str, Any] = {
-                "model": model_cfg,
-                "toolsets": toolsets,
-                "plugins": {"enabled": sorted(set(enabled_plugins))},
-                "bots": {
-                    "title": display_name,
-                    "role": role,
-                    "avatar_kind": avatar,
-                    "hidden": False,
-                    "managed_by": "dirty-forge",
-                    "omh_memory_mode": omh_mode,
-                },
-            }
+            cfg: dict[str, Any] = load_yaml(pdir / "config.yaml")
+            cfg["model"] = model_cfg
+            # Hermes reads `platform_toolsets.<platform>`, never a top-level `toolsets`: a bot given
+            # only `toolsets` came out with every tool enabled, so this whitelist is what actually
+            # holds the restriction.
+            cfg.setdefault("platform_toolsets", {})["cli"] = toolsets
+            cfg["plugins"] = {"enabled": sorted(set(enabled_plugins))}
             if isinstance(spec.get("mcp_servers"), dict) and spec["mcp_servers"]:
                 allow_trusted = bool(spec.get("allow_trusted_mcp", settings.get("allow_trusted_mcp", False)))
                 sanitized_mcp: dict[str, Any] = {}
@@ -480,21 +601,32 @@ def forge_bot(spec: dict[str, Any], settings: dict[str, Any] | None = None) -> d
 
             section_name = str(spec.get("section_name") or "DirtyForge").strip() or "DirtyForge"
             section_id = slugify_profile(section_name) or "dirty-forge"
-            save_yaml(
-                pdir / "profile.yaml",
+            bot_meta = load_yaml(pdir / "profile.yaml")
+            ui = bot_meta.setdefault("ui_meta", {}).setdefault("hermes-bots", {})
+            ui.update(
                 {
-                    "bot_title": display_name,
-                    "ui_meta": {
-                        "hermes-bots": {
-                            "title": display_name,
-                            "sectionId": section_id,
-                            "sectionName": section_name,
-                            "avatarKind": avatar,
-                            "hidden": False,
-                        }
-                    },
-                },
+                    "title": display_name,
+                    "description": str(spec.get("description") or "").strip(),
+                    "sectionId": section_id,
+                    "sectionName": section_name,
+                    # Desktop draws a face from `imageKind` + `shape`; the old `avatarKind` key is not
+                    # read by any client, so every Bot from this plugin rendered without one.
+                    "imageKind": "shape",
+                    "shape": f"blobatar::{avatar}",
+                    "hidden": False,
+                }
             )
+            ui.setdefault("created", int(time.time() * 1000))
+            revisions = bot_meta.get("_ui_meta_revisions")
+            revisions = revisions if isinstance(revisions, dict) else {}
+            revisions["hermes-bots"] = int(revisions.get("hermes-bots", 0)) + 1
+            bot_meta["_ui_meta_revisions"] = revisions
+            bot_meta["display_name"] = display_name
+            # Kept for the plugin's own older readers and tests; Desktop reads ui_meta only.
+            bot_meta["bot_title"] = display_name
+            bot_meta["bot_title_role"] = role
+            bot_meta["bot"] = {"managed_by": "dirty-forge", "omh_memory_mode": omh_mode}
+            save_yaml(pdir / "profile.yaml", bot_meta)
 
             # Memory & USER.md
             mem_lines: list[str] = [f"# {display_name} Memory\n"]
@@ -510,10 +642,19 @@ def forge_bot(spec: dict[str, Any], settings: dict[str, Any] | None = None) -> d
 
             src_user = profile_dir(root, launch_profile) / "memories" / "USER.md"
             if src_user.is_file():
-                shutil.copy2(src_user, pdir / "memories" / "USER.md")
+                # A verbatim copy carried the launching profile's own name into a bot with a different
+                # one, so it introduced itself as somebody else; `_filter_user_memory` keeps the facts
+                # about the user and drops the entries that name an assistant.
+                others = {b["name"] for b in list_bots(root, include_hidden=True)} | {launch_profile}
+                (pdir / "memories" / "USER.md").write_text(
+                    _filter_user_memory(src_user.read_text(encoding="utf-8"), others), encoding="utf-8"
+                )
 
             created_routines = _configure_cron(pdir, pid, spec.get("routines") or [], draft=bool(spec.get("draft", False)))
             gw_status = _gateway_check(bool(settings.get("install_gateway", True)))
+            # A Bot that never answers is not a Bot: the kickoff turn is the only check that the
+            # model, the credentials and the SOUL all work together. It is not a rollback condition.
+            chat_warning = _kickoff_check(root, pid, settings)
 
             out: dict[str, Any] = {
                 "ok": True,
@@ -531,6 +672,8 @@ def forge_bot(spec: dict[str, Any], settings: dict[str, Any] | None = None) -> d
             }
             if withheld_toolsets:
                 out["withheld_toolsets"] = withheld_toolsets
+            if chat_warning:
+                out["warning"] = chat_warning
             return out
         except Exception as exc:
             _remove_cron_jobs(pid, created_routines)
@@ -548,22 +691,138 @@ def list_bots(root: Path | None = None, include_hidden: bool = False) -> list[di
         if not pdir.is_dir() or pdir.name.startswith("."):
             continue
         cfg = load_yaml(pdir / "config.yaml")
-        meta = cfg.get("bots") if isinstance(cfg.get("bots"), dict) else {}
-        hidden = bool(meta.get("hidden", False))
+        # profile.yaml is the roster truth: it is what Hermes' own roster and Desktop read, so a
+        # second copy under config.yaml:bots could only ever disagree with it.
+        meta = load_yaml(pdir / "profile.yaml")
+        ui = (meta.get("ui_meta") or {}).get("hermes-bots")
+        ui = ui if isinstance(ui, dict) else {}
+        hidden = bool(ui.get("hidden", False))
         if hidden and not include_hidden:
             continue
+        shape = str(ui.get("shape") or "")
         bots.append(
             {
                 "name": pdir.name,
-                "display_name": meta.get("title") or pdir.name,
-                "role": meta.get("role") or "",
-                "avatar_kind": meta.get("avatar_kind") or "boxy",
+                "display_name": ui.get("title") or meta.get("display_name") or pdir.name,
+                "role": meta.get("bot_title_role") or "",
+                "avatar_kind": shape.rsplit(":", 1)[-1] if shape else "boxy",
                 "hidden": hidden,
-                "omh_memory_mode": meta.get("omh_memory_mode") or "unknown",
+                "omh_memory_mode": ((pdir / ".omh" / "setup-profile.json").is_file() and "auto-safe") or "unknown",
                 "model": (cfg.get("model") or {}).get("default", ""),
             }
         )
     return bots
+
+
+HISTORY_KEEP = 20
+SNAPSHOT_FILES = ("SOUL.md", "config.yaml", "profile.yaml")
+
+
+def _snapshot_dir(pdir: Path) -> Path:
+    """A fresh ``history/<UTC stamp>/`` directory; a second edit in the same second gets a suffix."""
+    base = pdir / "history"
+    base.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    target = base / stamp
+    suffix = 1
+    while target.exists():
+        target = base / f"{stamp}-{suffix}"
+        suffix += 1
+    target.mkdir()
+    return target
+
+
+def snapshot_bot(pdir: Path, reason: str = "") -> dict[str, Any]:
+    """Copy the files an edit may touch into ``history/``; the manifest is written last, on purpose.
+
+    A snapshot without ``manifest.json`` is a run that died mid-copy, and ``rollback_bot`` refuses
+    it rather than restoring half a Bot. Retention keeps the newest ``HISTORY_KEEP`` snapshots.
+    """
+    target = _snapshot_dir(pdir)
+    copied: list[str] = []
+    for name in SNAPSHOT_FILES:
+        src = pdir / name
+        if src.is_file():
+            shutil.copy2(src, target / name)
+            copied.append(name)
+    (target / "manifest.json").write_text(
+        json.dumps({"files": copied, "reason": reason, "at": datetime.now(timezone.utc).isoformat()}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    history = pdir / "history"
+    snaps = sorted((d for d in history.iterdir() if d.is_dir()), reverse=True)
+    for stale in snaps[HISTORY_KEEP:]:
+        shutil.rmtree(stale, ignore_errors=True)
+    return {"stamp": target.name, "files": copied}
+
+
+def _snapshot_text(target: Path, name: str) -> str:
+    path = target / name
+    return path.read_text(encoding="utf-8") if path.is_file() else ""
+
+
+def _snapshot_diff(before: Path, pdir: Path, files: list[str]) -> str:
+    """Unified diff of the snapshot against the Bot as it is now, capped for a chat reply."""
+    chunks: list[str] = []
+    for name in files:
+        old = _snapshot_text(before, name).splitlines(keepends=True)
+        new = (pdir / name).read_text(encoding="utf-8").splitlines(keepends=True) if (pdir / name).is_file() else []
+        if old == new:
+            continue
+        chunks.extend(difflib.unified_diff(old, new, fromfile=f"a/{name}", tofile=f"b/{name}", n=2))
+    text = "".join(chunks)
+    return text if len(text) <= 6000 else text[:6000] + "\n… (diff truncated)\n"
+
+
+def rollback_bot(name: str, stamp: str = "last", root: Path | None = None) -> dict[str, Any]:
+    """Restore a Bot's files from ``history/<stamp>`` (default: the newest) and snapshot that first."""
+    r = root or default_root()
+    ok, pid_or_err = validate_profile_id(name, allow_default=False)
+    if not ok:
+        return {"ok": False, "error": pid_or_err}
+    pdir = profile_dir(r, pid_or_err)
+    if not pdir.is_dir():
+        return {"ok": False, "error": f"Bot '{name}' not found"}
+    history = pdir / "history"
+    if not history.is_dir():
+        return {"ok": False, "error": f"no snapshots for '{pid_or_err}' — nothing to roll back"}
+    snaps = sorted((d for d in history.iterdir() if d.is_dir()), reverse=True)
+    if not snaps:
+        return {"ok": False, "error": f"no snapshots for '{pid_or_err}' — nothing to roll back"}
+    if stamp and stamp != "last":
+        match = next((d for d in snaps if d.name == stamp), None)
+        if match is None:
+            return {"ok": False, "error": f"snapshot '{stamp}' not found"}
+        target = match
+    else:
+        target = snaps[0]
+    manifest_path = target / "manifest.json"
+    if not manifest_path.is_file():
+        return {
+            "ok": False,
+            "error": f"snapshot '{target.name}' is incomplete (no manifest.json) — refusing to restore half a Bot",
+        }
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {"ok": False, "error": f"snapshot '{target.name}' has an unreadable manifest ({exc})"}
+    files = [f for f in manifest.get("files") or [] if f in SNAPSHOT_FILES]
+    if not files:
+        return {"ok": False, "error": f"snapshot '{target.name}' holds no files"}
+    undo = snapshot_bot(pdir, reason=f"before rollback to {target.name}")
+    restored: list[str] = []
+    for filename in files:
+        src = target / filename
+        if src.is_file():
+            shutil.copy2(src, pdir / filename)
+            restored.append(filename)
+    return {
+        "ok": True,
+        "name": pid_or_err,
+        "restored": restored,
+        "from": target.name,
+        "undo_snapshot": undo["stamp"],
+    }
 
 
 def update_bot(name: str, changes: dict[str, Any], root: Path | None = None) -> dict[str, Any]:
@@ -576,20 +835,31 @@ def update_bot(name: str, changes: dict[str, Any], root: Path | None = None) -> 
         return {"ok": False, "error": f"Bot '{name}' not found"}
 
     soul_append = str(changes.get("soul_append") or "").strip()
-    if soul_append:
-        secrets = scan_secrets(soul_append)
+    soul_replace = str(changes.get("soul_replace") or "").strip()
+    for label, body in (("soul_append", soul_append), ("soul_replace", soul_replace)):
+        if not body:
+            continue
+        secrets = scan_secrets(body)
         if secrets:
-            return {"ok": False, "error": f"secret pattern detected in soul_append ({', '.join(secrets)})"}
-        inj = scan_prompt_injection(soul_append)
+            return {"ok": False, "error": f"secret pattern detected in {label} ({', '.join(secrets)})"}
+        inj = scan_prompt_injection(body)
         if inj:
-            return {"ok": False, "error": f"prompt injection pattern detected in soul_append ({', '.join(inj)})"}
+            return {"ok": False, "error": f"prompt injection pattern detected in {label} ({', '.join(inj)})"}
 
     cfg = load_yaml(pdir / "config.yaml")
-    bots_meta = cfg.setdefault("bots", {})
+    cfg.setdefault("platform_toolsets", {})
+    prof_path = pdir / "profile.yaml"
+    prof = load_yaml(prof_path)
+    ui = prof.setdefault("ui_meta", {}).setdefault("hermes-bots", {})
+    # Nothing is written before this: an edit with no snapshot is an edit nobody can undo.
+    snap = snapshot_bot(pdir, reason=name)
     if changes.get("display_name"):
-        bots_meta["title"] = str(changes["display_name"]).strip()
+        title = str(changes["display_name"]).strip()
+        ui["title"] = title
+        prof["display_name"] = title
     if changes.get("avatar_kind") in AVATAR_KINDS:
-        bots_meta["avatar_kind"] = changes["avatar_kind"]
+        ui["imageKind"] = "shape"
+        ui["shape"] = f"blobatar::{changes['avatar_kind']}"
     withheld: list[str] = []
     if isinstance(changes.get("toolsets"), list):
         valid = [str(t).strip() for t in changes["toolsets"] if str(t).strip() in ALL_TOOLSETS]
@@ -602,25 +872,25 @@ def update_bot(name: str, changes: dict[str, Any], root: Path | None = None) -> 
             approve_categories=approve_cats,
             allow_restricted=bool(changes.get("allow_restricted_toolsets", False)),
         )
-        cfg["toolsets"] = sorted(set(BASE_TOOLSETS) | set(allowed_extra))
+        cfg["platform_toolsets"]["cli"] = sorted(set(BASE_TOOLSETS) | set(allowed_extra))
     save_yaml(pdir / "config.yaml", cfg)
 
-    prof_path = pdir / "profile.yaml"
-    if prof_path.is_file():
-        prof = load_yaml(prof_path)
-        ui = prof.setdefault("ui_meta", {}).setdefault("hermes-bots", {})
-        if changes.get("display_name"):
-            prof["bot_title"] = bots_meta["title"]
-            ui["title"] = bots_meta["title"]
-        if changes.get("avatar_kind") in AVATAR_KINDS:
-            ui["avatarKind"] = bots_meta["avatar_kind"]
+    if prof.get("ui_meta"):
         save_yaml(prof_path, prof)
 
     soul_path = pdir / "SOUL.md"
-    if soul_append and soul_path.is_file():
+    if (soul_append or soul_replace) and soul_path.is_file():
         current = soul_path.read_text(encoding="utf-8")
-        soul_path.write_text(current.rstrip() + "\n\n" + soul_append + "\n", encoding="utf-8")
-    out: dict[str, Any] = {"ok": True, "name": pdir.name}
+        if soul_replace:
+            # Replace, not append: after three "also add that…" appends nobody can tell which
+            # version is live, and there is no way back to a clean one.
+            soul_path.write_text(soul_replace.rstrip() + "\n", encoding="utf-8")
+        else:
+            soul_path.write_text(current.rstrip() + "\n\n" + soul_append + "\n", encoding="utf-8")
+    out: dict[str, Any] = {"ok": True, "name": pdir.name, "snapshot": snap["stamp"]}
+    diff = _snapshot_diff(pdir / "history" / snap["stamp"], pdir, snap["files"])
+    if diff:
+        out["diff"] = diff
     if withheld:
         out["withheld_toolsets"] = withheld
     return out

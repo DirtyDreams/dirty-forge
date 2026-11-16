@@ -23,5 +23,3 @@ jobs:
         run: python3 -m unittest discover -s tests -v
       - name: Lint with ruff
         run: ruff check .
-      - name: Syntax-check Desktop UI ESM
-        run: node --check desktop/plugin.js

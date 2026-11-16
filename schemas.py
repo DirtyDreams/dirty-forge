@@ -73,6 +73,33 @@ UPDATE_BOT = {
             "avatar_kind": {"type": "string", "description": "New avatar_kind."},
             "toolsets": {"type": "array", "items": {"type": "string"}, "description": "Updated extra toolsets."},
             "soul_append": {"type": "string", "description": "Markdown block to append to SOUL.md."},
+            "soul_replace": {
+                "type": "string",
+                "description": "Full replacement of SOUL.md. Prefer this over soul_append for a real edit.",
+            },
+            "allow_restricted_toolsets": {
+                "type": "boolean",
+                "description": "Grant send/spend/destroy toolsets despite approvals being enforced.",
+            },
+        },
+        "required": ["name"],
+    },
+}
+
+ROLLBACK_BOT = {
+    "name": "dirty_forge_rollback",
+    "description": (
+        "Restore a Bot's SOUL.md, config.yaml and profile.yaml from its newest snapshot (or a named "
+        "one). The current state is snapshotted first, so a rollback can itself be undone."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Bot profile id or name."},
+            "stamp": {
+                "type": "string",
+                "description": "Snapshot directory name to restore; omit or 'last' for the newest.",
+            },
         },
         "required": ["name"],
     },

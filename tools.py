@@ -46,6 +46,13 @@ def update_bot(args: dict[str, Any], **kwargs: Any) -> str:
     return _json(forge.update_bot(name, args or {}))
 
 
+def rollback_bot(args: dict[str, Any], **kwargs: Any) -> str:
+    name = str((args or {}).get("name") or "").strip()
+    if not name:
+        return _json({"ok": False, "error": "name is required"})
+    return _json(forge.rollback_bot(name, stamp=str((args or {}).get("stamp") or "last")))
+
+
 def check_bots(args: dict[str, Any], **kwargs: Any) -> str:
     root = forge.default_root()
     bots = forge.list_bots(root=root, include_hidden=True)

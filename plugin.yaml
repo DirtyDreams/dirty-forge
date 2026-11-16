@@ -2,7 +2,7 @@ name: dirty-forge
 version: 1.2.0
 manifest_version: 2
 api_version: 1
-description: Say "make me a <role>" and your Hermes agent builds a complete, working Bot or team — name, avatar, compiled SOUL.md, OMH auto-safe memory, sentinel guardrails, circuit breaker, telemetry, journal, handoffs, portability, and gateway — tested and rolled back on failure.
+description: The bot-builder agent's toolkit — say "make me a <role>" and Forge provisions a complete Hermes Bot or team (compiled SOUL.md, OMH auto-safe memory, sentinel guardrails, journal, routines, gateway), edits it with a snapshot + diff + rollback trail, and evaluates it.
 author: DirtyDreams
 license: MIT
 homepage: https://github.com/DirtyDreams/dirty-forge
@@ -23,6 +23,7 @@ provides_tools:
   - dirty_forge_create_team
   - dirty_forge_list_bots
   - dirty_forge_update_bot
+  - dirty_forge_rollback
   - dirty_forge_copy_bot
   - dirty_forge_teach_bot
   - dirty_forge_share_bot
