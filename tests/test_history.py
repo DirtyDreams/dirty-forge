@@ -136,6 +136,18 @@ class HistoryTests(unittest.TestCase):
         self.assertLessEqual(len(snaps), forge.HISTORY_KEEP)
         self.assertTrue(all((d / "manifest.json").is_file() for d in snaps))
 
+    def test_rollback_of_the_oldest_snapshot_at_the_retention_cap_still_restores(self) -> None:
+        # The undo snapshot applies retention, and at the cap that deletes the very target being
+        # restored. Reading the payload first is what makes this restore instead of silently no-op.
+        for i in range(forge.HISTORY_KEEP):
+            forge.snapshot_bot(self.pdir, reason=f"fill {i}")
+        oldest = sorted(d.name for d in (self.pdir / "history").iterdir() if d.is_dir())[0]
+        (self.pdir / "SOUL.md").write_text("# changed\n", encoding="utf-8")
+        res = forge.rollback_bot("wren", stamp=oldest)
+        self.assertTrue(res["ok"], res.get("error"))
+        self.assertIn("SOUL.md", res["restored"])
+        self.assertEqual((self.pdir / "SOUL.md").read_text(encoding="utf-8"), self.original_soul)
+
 
 if __name__ == "__main__":
     unittest.main()

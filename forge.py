@@ -809,13 +809,18 @@ def rollback_bot(name: str, stamp: str = "last", root: Path | None = None) -> di
     files = [f for f in manifest.get("files") or [] if f in SNAPSHOT_FILES]
     if not files:
         return {"ok": False, "error": f"snapshot '{target.name}' holds no files"}
+    # Read the payload BEFORE the undo snapshot: that snapshot applies retention, and when history
+    # is at the cap the oldest one — this very target — is what retention deletes.
+    payload = {f: (target / f).read_bytes() for f in files if (target / f).is_file()}
+    if not payload:
+        return {"ok": False, "error": f"snapshot '{target.name}' holds no readable files"}
     undo = snapshot_bot(pdir, reason=f"before rollback to {target.name}")
     restored: list[str] = []
-    for filename in files:
-        src = target / filename
-        if src.is_file():
-            shutil.copy2(src, pdir / filename)
-            restored.append(filename)
+    for filename, blob in payload.items():
+        (pdir / filename).write_bytes(blob)
+        restored.append(filename)
+    if not restored:  # never report a rollback that restored nothing
+        return {"ok": False, "error": f"rollback to '{target.name}' restored nothing"}
     return {
         "ok": True,
         "name": pid_or_err,
