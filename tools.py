@@ -67,6 +67,7 @@ def check_bots(args: dict[str, Any], **kwargs: Any) -> str:
             {
                 "name": bot["name"],
                 "display_name": bot["display_name"],
+                "role": "builder" if policy.is_builder(root, pdir) else "bot",
                 "policy_in_sync": drift["in_sync"],
                 "policy_reason": drift["reason"],
                 "omh_configured": omh_cfg.is_file(),

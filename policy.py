@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -25,9 +26,64 @@ These baseline rules apply to every Bot, regardless of specialty.
 - Never fabricate numbers, file paths, quotes, or command outputs. Verify before claiming, and state plainly when unsure.
 """
 
+# The Bot-builder's own policy. Forge is not a Bot: it is the profile that writes every other
+# profile's policy, so handing it the Bot canon would make it believe it is subject to rules it
+# enforces. Its own block instead freezes the one thing that matters: it must not rewrite itself.
+BUILDER_POLICY = """# Operating policy — the Bot builder
+
+These rules bind you because you own every Bot on this deployment. You are not one of them.
+
+## You do not rewrite yourself
+- You never change your own SOUL.md, your own `config.yaml`, or your own permissions, and you never
+  take an action that widens your own reach. A Bot that can edit its own rules has no rules.
+- Every edit you make to a Bot leaves a snapshot under `history/` first, and you show the diff.
+  "It worked" without the diff is a report, not evidence.
+- You do not delete a Bot the user did not name in this conversation.
+
+## You do not decide what a Bot may do on your own
+- Deleting a Bot, granting `send`/`spend`/`destroy`, anything outside `~/.hermes/profiles/`, and any
+  change to the roster goes to the user first.
+- A Bot you build inherits the shared policy for Bots; that block is written by the deployment, not
+  by you, and you do not edit it inside a Bot's SOUL by hand.
+"""
+
 
 def policy_path(root: Path) -> Path:
     return root / DEFAULT_RELATIVE
+
+
+def builder_profile_dir(root: Path) -> Path:
+    """The profile this plugin is installed in — the Bot builder itself, whoever it is named.
+
+    Read from HERMES_HOME rather than a hardcoded name: the builder is whichever profile runs the
+    plugin, and a deployment that renames it must keep working.
+    """
+    from .forge import default_root
+
+    env_home = os.environ.get("HERMES_HOME", "").strip()
+    based = Path(env_home).expanduser() if env_home else Path.home() / ".hermes"
+    if based.parent.name == "profiles":
+        return based
+    return default_root() / "profiles" / "forge"
+
+
+def is_builder(root: Path, profile_dir: Path) -> bool:
+    """True for the profile this plugin runs in: the builder, not one of the Bots it manages."""
+    try:
+        return profile_dir.resolve() == builder_profile_dir(root).resolve()
+    except OSError:
+        return False
+
+
+def policy_text_for(root: Path, profile_dir: Path) -> str:
+    """The policy *profile_dir* is judged against: the Bot canon, or the builder's own rules.
+
+    A builder handed the Bot canon would read rules it enforces as rules it obeys, and its SOUL
+    would then claim a role it does not have. It gets BUILDER_POLICY instead.
+    """
+    if is_builder(root, profile_dir):
+        return BUILDER_POLICY
+    return ensure_starter_policy(root).read_text(encoding="utf-8")
 
 
 def ensure_starter_policy(root: Path) -> Path:
@@ -62,8 +118,7 @@ def extract_fingerprint(soul_md: str) -> str | None:
 
 
 def check_drift(root: Path, profile_dir: Path) -> dict[str, str | bool]:
-    canonical_file = ensure_starter_policy(root)
-    canonical_fp = fingerprint(canonical_file.read_text(encoding="utf-8"))
+    canonical_fp = fingerprint(policy_text_for(root, profile_dir))
     soul_file = profile_dir / "SOUL.md"
     if not soul_file.exists():
         return {"in_sync": False, "reason": "missing SOUL.md", "expected": canonical_fp, "actual": ""}
@@ -79,8 +134,6 @@ def check_drift(root: Path, profile_dir: Path) -> dict[str, str | bool]:
 
 
 def sync_policies(root: Path, profile_dirs: list[Path]) -> dict[str, Any]:
-    canonical_file = ensure_starter_policy(root)
-    canonical_text = canonical_file.read_text(encoding="utf-8")
     updated: list[str] = []
     for pdir in profile_dirs:
         soul_file = pdir / "SOUL.md"
@@ -88,7 +141,11 @@ def sync_policies(root: Path, profile_dirs: list[Path]) -> dict[str, Any]:
             continue
         drift = check_drift(root, pdir)
         if not drift["in_sync"]:
-            new_soul = inject_policy(soul_file.read_text(encoding="utf-8", errors="ignore"), canonical_text)
+            # Each profile is rewritten against its OWN policy: the builder gets its own rules, never
+            # the Bot canon it writes into every Bot (see policy_text_for).
+            new_soul = inject_policy(
+                soul_file.read_text(encoding="utf-8", errors="ignore"), policy_text_for(root, pdir)
+            )
             soul_file.write_text(new_soul, encoding="utf-8")
             updated.append(pdir.name)
     return {"ok": True, "updated": updated, "count": len(updated)}

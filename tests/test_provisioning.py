@@ -149,6 +149,52 @@ class ProvisioningTests(unittest.TestCase):
         self.assertIn("outside the requested root", err)
         self.assertFalse(stray.exists(), "the stray profile it created was left behind")
 
+    def test_the_builder_is_judged_by_its_own_policy_not_the_bot_canon(self) -> None:
+        """Forge writes every Bot's policy, so handing it the Bot canon makes it read that canon as
+        its own. It must be judged against BUILDER_POLICY, and sync must never paste the Bot block."""
+        from dirty_forge import policy
+
+        builder = self.root / "profiles" / "forge"
+        (builder / "memories").mkdir(parents=True)
+        (builder / "SOUL.md").write_text("# Forge — Bot Builder\n", encoding="utf-8")
+        bot = self.root / "profiles" / "puck"
+        (bot / "memories").mkdir(parents=True)
+        (bot / "SOUL.md").write_text("# Puck\n", encoding="utf-8")
+
+        old_env = os.environ.get("HERMES_HOME")
+        os.environ["HERMES_HOME"] = str(builder)
+        try:
+            self.assertTrue(policy.is_builder(self.root, builder))
+            self.assertFalse(policy.is_builder(self.root, bot))
+
+            res = policy.sync_policies(self.root, [builder, bot])
+            self.assertEqual(sorted(res["updated"]), ["forge", "puck"])
+
+            builder_soul = (builder / "SOUL.md").read_text(encoding="utf-8")
+            bot_soul = (bot / "SOUL.md").read_text(encoding="utf-8")
+            # The builder gets its own rules; the deployment canon is for the Bots it manages.
+            self.assertIn(policy.BUILDER_POLICY.strip().splitlines()[0], builder_soul)
+            self.assertNotIn("Shared operating policy — every Bot", builder_soul)
+            self.assertIn("Shared operating policy — every Bot", bot_soul)
+            # …and the canon file itself is untouched by the builder's sync.
+            self.assertEqual(
+                (self.root / "shared" / "BOT-POLICY.md").read_text(encoding="utf-8").strip(),
+                policy.STARTER_POLICY.strip(),
+            )
+            # Both now read as in sync, each against its own policy.
+            self.assertTrue(policy.check_drift(self.root, builder)["in_sync"])
+            self.assertTrue(policy.check_drift(self.root, bot)["in_sync"])
+
+            # Idempotent: a second sync changes nothing and reports no updates.
+            again = policy.sync_policies(self.root, [builder, bot])
+            self.assertEqual(again["updated"], [])
+            self.assertEqual((builder / "SOUL.md").read_text(encoding="utf-8"), builder_soul)
+        finally:
+            if old_env is None:
+                os.environ.pop("HERMES_HOME", None)
+            else:
+                os.environ["HERMES_HOME"] = old_env
+
     def test_tombstoned_profiles_are_not_bots(self) -> None:
         # A deleted profile leaves profiles/.deleted/<name>; a live gateway that still held the old
         # handles recreates the directory as an empty shell. Listing it reports a Bot with no config,
