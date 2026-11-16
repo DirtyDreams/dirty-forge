@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -119,6 +120,29 @@ class ProvisioningTests(unittest.TestCase):
             err = forge._provision_profile(self.root, "wren", "QA")
         self.assertIn("outside the requested root", err)
         self.assertFalse(stray.exists(), "the stray profile it created was left behind")
+
+    def test_delete_goes_through_hermes_teardown_not_a_bare_rmtree(self) -> None:
+        from unittest.mock import MagicMock, patch
+
+        pdir = forge.profile_dir(self.root, "puck")
+        pdir.mkdir(parents=True)
+        (pdir / "config.yaml").write_text("model: {}\n", encoding="utf-8")
+        called: list[str] = []
+        profiles_mod = MagicMock()
+
+        def _fake_delete(name, yes=False):
+            called.append(name)
+            shutil.rmtree(forge.profile_dir(self.root, name))
+
+        profiles_mod.delete_profile.side_effect = _fake_delete
+        with patch.object(forge, "_hermes_root_resolves_to", return_value=True), \
+             patch.dict(sys.modules, {"hermes_cli": MagicMock(), "hermes_cli.profiles": profiles_mod}):
+            res = forge.delete_bot("puck", settings={"allow_delete": True, "backup_before_delete": False}, root=self.root)
+        # The teardown is what unserve the profile: a bare rmtree left the gateway serving a
+        # directory that no longer existed and recreating it on the next reconcile.
+        self.assertEqual(called, ["puck"], "delete_bot skipped Hermes' teardown")
+        self.assertTrue(res["ok"])
+        self.assertFalse(pdir.exists())
 
     def test_kickoff_is_skipped_rather_than_sent_for_an_unresolvable_root(self) -> None:
         from unittest.mock import patch

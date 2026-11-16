@@ -264,6 +264,27 @@ def _hermes_root_resolves_to(root: Path) -> bool:
         return False
 
 
+def _delete_profile_through_hermes(root: Path, pid: str) -> str:
+    """Delete the profile through Hermes' own teardown. ``""`` means gone; a reason otherwise.
+
+    A bare ``shutil.rmtree`` leaves the multiplexer serving a profile whose directory is gone: the
+    gateway keeps its handles, recreates the scaffolding on the next reconcile, and the Bot comes
+    back as an empty shell. Hermes' teardown tombstones the name, unserve the profile, settles its
+    identity and releases the open handles first — the same order ``hermes profile delete`` uses.
+    """
+    if not _hermes_root_resolves_to(root):
+        return "skip"
+    try:
+        from hermes_cli.profiles import delete_profile
+    except ImportError:
+        return "skip"
+    try:
+        delete_profile(pid, yes=True)
+    except Exception as exc:  # a live runtime that still owns it, a partial identity settlement
+        return f"profile delete failed: {exc}"
+    return ""
+
+
 def _provision_profile(root: Path, pid: str, description: str) -> str:
     """Create the profile through Hermes' provisioning. ``""`` means made; ``"skip"`` means "lay it out here".
 
@@ -1029,5 +1050,14 @@ def delete_bot(name: str, settings: dict[str, Any] | None = None, root: Path | N
             tar.add(pdir, arcname=pid)
         backup_path = str(archive)
 
-    shutil.rmtree(pdir)
+    # Hermes' own teardown first: it tombstones the name, unserve the profile and releases the
+    # handles that keep recreating this directory. Falling back to rmtree only when Hermes cannot
+    # resolve this root (tests, scratch homes), which is also the only case provisioning falls back.
+    teardown = _delete_profile_through_hermes(r, pid)
+    if teardown == "skip":
+        shutil.rmtree(pdir)
+    elif teardown:
+        return {"ok": False, "error": teardown, "backup": backup_path}
+    if pdir.exists():
+        return {"ok": False, "error": f"Bot '{pid}' is still on disk after delete", "backup": backup_path}
     return {"ok": True, "deleted": pid, "backup": backup_path}
