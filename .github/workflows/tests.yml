@@ -31,3 +31,8 @@ jobs:
 
       - name: Run unit and integration tests
         run: python -m unittest discover -s tests -v
+
+      # Same suite with hermes_cli unimportable and no hermes on PATH: the runner has no Hermes,
+      # and a test that only passes on a machine with one is a test this project cannot trust.
+      - name: Run tests without Hermes installed
+        run: python tests/run_without_hermes.py

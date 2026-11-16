@@ -104,20 +104,29 @@ class ProvisioningTests(unittest.TestCase):
         self.assertEqual(forge._provision_profile(self.root, "wren", "QA"), "skip")
 
     def test_profile_landing_outside_the_root_is_removed_not_orphaned(self) -> None:
-        from unittest.mock import patch
+        from unittest.mock import MagicMock, patch
 
         stray = Path(self._tmp.name) / "elsewhere" / "wren"
         stray.mkdir(parents=True)
         (stray / "config.yaml").write_text("model: {}\n", encoding="utf-8")
         fake = type("R", (), {"path": stray, "warnings": []})()
+        # A machine without Hermes installed has no hermes_cli to patch into, and that is exactly the
+        # machine CI runs on: stand the module up rather than importing what may not be there.
+        provision_mod = MagicMock()
+        provision_mod.provision_profile.return_value = fake
         with patch.object(forge, "_hermes_root_resolves_to", return_value=True), \
-             patch("hermes_cli.profile_provision.provision_profile", return_value=fake):
+             patch.dict(sys.modules, {"hermes_cli": MagicMock(), "hermes_cli.profile_provision": provision_mod}):
             err = forge._provision_profile(self.root, "wren", "QA")
         self.assertIn("outside the requested root", err)
         self.assertFalse(stray.exists(), "the stray profile it created was left behind")
 
     def test_kickoff_is_skipped_rather_than_sent_for_an_unresolvable_root(self) -> None:
-        warning = forge._kickoff_check(self.root, "wren", {})
+        from unittest.mock import patch
+
+        # `which` is patched so the PATH branch cannot answer first: this asserts the root gate,
+        # which is a different reason, on a machine with Hermes on PATH and on one without.
+        with patch.object(forge.shutil, "which", return_value="/usr/bin/hermes"):
+            warning = forge._kickoff_check(self.root, "wren", {})
         # The root gate specifically: the PATH branch says "not on PATH", which is a different reason.
         self.assertIn("not one Hermes resolves", warning)
 
