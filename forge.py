@@ -43,10 +43,10 @@ RESTRICTED_CATEGORY_TOOLSETS: dict[str, set[str]] = {
     "destroy": {"terminal", "code_execution", "computer_use"},
 }
 VALID_PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
-# The silhouettes Desktop can actually draw (`BLOB_KINDS` in avatar.tsx). A kind outside this
-# list is accepted by the schema, written into ui_meta, and then silently dropped by the renderer —
-# the Bot keeps a shape string that draws nothing. `leaf` and `star` used to sit here and did exactly
-# that; `round`/`capsule`/`nub`/`organic`/`hexagon`/`triangle` were unreachable.
+# The silhouettes Desktop can actually draw (`BLOB_KINDS` in avatar.tsx). `create_bot` and
+# `update_bot` coerce anything else to "boxy" before writing ui_meta, so the Bot never keeps a shape
+# string that draws nothing — but a kind missing here is one the user cannot ask for. `leaf` and
+# `star` sat here and were unusable; six silhouettes Desktop knows were unreachable.
 AVATAR_KINDS = ("sun", "cloud", "boxy", "droplet", "capsule", "round", "nub", "organic", "hexagon", "triangle")
 GENERIC_ROLE_WORDS = {
     "agent",

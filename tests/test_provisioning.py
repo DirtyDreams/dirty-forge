@@ -150,17 +150,38 @@ class ProvisioningTests(unittest.TestCase):
         self.assertFalse(stray.exists(), "the stray profile it created was left behind")
 
     def test_avatar_kinds_are_the_silhouettes_desktop_can_draw(self) -> None:
-        """A kind Desktop does not know is written into ui_meta and then silently dropped.
+        """Pin AVATAR_KINDS to avatar.tsx's BLOB_KINDS, read from the source that draws the face.
 
-        `leaf` and `star` sat in AVATAR_KINDS and drew nothing; every silhouette in BLOB_KINDS
-        (avatar.tsx) should be reachable from here.
+        A literal copy in this test would only guard manual edits of forge.py: changing avatar.tsx
+        would still let the two lists drift apart, which is the defect this test exists for.
         """
-        BLOB_KINDS = {
-            "round", "organic", "boxy", "capsule", "nub",
-            "cloud", "droplet", "hexagon", "sun", "triangle",
-        }
-        self.assertEqual(set(forge.AVATAR_KINDS) - BLOB_KINDS, set(), "Desktop cannot draw these")
-        self.assertEqual(BLOB_KINDS - set(forge.AVATAR_KINDS), set(), "unreachable silhouettes")
+        import re
+
+        avatar_tsx = (
+            Path(__file__).resolve().parents[3] / "hermes-agent" / "apps" / "desktop" / "src"
+            / "plugins" / "hermes-bots" / "avatar.tsx"
+        )
+        if not avatar_tsx.is_file():
+            self.skipTest(f"Desktop sources not on this host: {avatar_tsx}")
+        block = re.search(r"export const BLOB_KINDS = \[(.*?)\]", avatar_tsx.read_text(encoding="utf-8"), re.S)
+        self.assertIsNotNone(block, "avatar.tsx no longer declares BLOB_KINDS")
+        desktop = {s.strip().strip("'\"") for s in block.group(1).split(",") if s.strip()}
+        self.assertEqual(set(forge.AVATAR_KINDS) - desktop, set(), "Desktop cannot draw these")
+        self.assertEqual(desktop - set(forge.AVATAR_KINDS), set(), "unreachable silhouettes")
+
+    def test_unknown_avatar_kind_is_coerced_not_stored(self) -> None:
+        """The claim the comment makes: ui_meta never keeps a silhouette Desktop would drop."""
+        res = self._bot(avatar_kind="star")          # dropped from AVATAR_KINDS, Desktop never drew it
+        self.assertTrue(res["ok"], res.get("error"))
+        prof = yaml.safe_load((Path(res["profile_dir"]) / "profile.yaml").read_text(encoding="utf-8"))
+        shape = prof["ui_meta"]["hermes-bots"]["shape"]
+        self.assertEqual(shape, "blobatar::boxy", f"an unknown kind reached ui_meta: {shape!r}")
+
+        # update_bot must not write one either.
+        out = forge.update_bot("Wren", {"avatar_kind": "leaf"}, root=self.root)
+        self.assertTrue(out["ok"], out.get("error"))
+        prof = yaml.safe_load((Path(res["profile_dir"]) / "profile.yaml").read_text(encoding="utf-8"))
+        self.assertNotIn("leaf", prof["ui_meta"]["hermes-bots"]["shape"])
 
     def test_the_builder_is_judged_by_its_own_policy_not_the_bot_canon(self) -> None:
         """Forge writes every Bot's policy, so handing it the Bot canon makes it read that canon as
