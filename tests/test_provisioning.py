@@ -93,6 +93,34 @@ class ProvisioningTests(unittest.TestCase):
         self.assertNotIn("avatarKind", ui)
         self.assertGreaterEqual(prof["_ui_meta_revisions"]["hermes-bots"], 1)
 
+    def test_ui_meta_shape_round_trips_through_desktops_parser(self) -> None:
+        """Pin the one contract Desktop actually enforces: `parseBlobShape` in avatar.tsx.
+
+        Desktop splits on ':' and reads parts[1] as the seed and parts[2] as the silhouette. A
+        format this test cannot parse renders the Bot without a face, which is what `avatarKind`
+        did for every Bot built before 2.0.0.
+        """
+        BLOB_KINDS = {"round", "organic", "boxy", "capsule", "nub", "blob", "star"}
+        res = self._bot(avatar_kind="boxy", section_name="Roster")
+        self.assertTrue(res["ok"], res.get("error"))
+        prof = yaml.safe_load((Path(res["profile_dir"]) / "profile.yaml").read_text(encoding="utf-8"))
+        ui = prof["ui_meta"]["hermes-bots"]
+
+        # parseBlobShape(shape, name): seedPart = parts[1] || '', kind = parts[2] if known
+        parts = ui["shape"].split(":")
+        self.assertEqual(parts[0], "blobatar")
+        seed_part, kind = (parts[1] if len(parts) > 1 else ""), (parts[2] if len(parts) > 2 else "")
+        self.assertEqual(kind, "boxy", f"Desktop would drop the silhouette: {ui['shape']!r}")
+        self.assertIn(kind, BLOB_KINDS)
+        # An empty seed is the documented "follow the bot's name" form, so a renamed Bot keeps its face.
+        self.assertEqual(seed_part, "")
+
+        # The keys Desktop's BotMeta declares and this plugin is responsible for.
+        for key in ("title", "description", "imageKind", "shape", "created"):
+            self.assertIn(key, ui, f"Desktop's BotMeta reads {key!r}, the plugin never writes it")
+        self.assertIsInstance(ui["created"], int)
+        self.assertGreater(ui["created"], 1_700_000_000_000)
+
     def test_name_collision_leaves_nothing_behind(self) -> None:
         self.assertTrue(self._bot()["ok"])
         again = self._bot()
