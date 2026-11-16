@@ -1,5 +1,5 @@
 name: dirty-forge
-version: 1.2.0
+version: 2.0.0
 manifest_version: 2
 api_version: 1
 description: The bot-builder agent's toolkit — say "make me a <role>" and Forge provisions a complete Hermes Bot or team (compiled SOUL.md, OMH auto-safe memory, sentinel guardrails, journal, routines, gateway), edits it with a snapshot + diff + rollback trail, and evaluates it.

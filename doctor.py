@@ -58,8 +58,6 @@ def run_doctor(settings: dict[str, Any] | None = None) -> dict[str, Any]:
 
     intake_dir = root / "intake"
     intake_sessions = len(list(intake_dir.glob("*.json"))) if intake_dir.is_dir() else 0
-    desktop_ui_present = (pkg_dir / "desktop" / "plugin.js").is_file()
-    dashboard_api_present = (pkg_dir / "dashboard" / "plugin_api.py").is_file()
     omh_installed = (root / "plugins" / "omh" / "plugin.yaml").is_file()
     blocking_status, blocking_warning = _detect_pre_tool_call_blocking()
     warnings: list[str] = []
@@ -74,8 +72,6 @@ def run_doctor(settings: dict[str, Any] | None = None) -> dict[str, Any]:
         "hermes_root": str(root),
         "hermes_cli": shutil.which("hermes") or "not found",
         "omh_plugin_installed": omh_installed,
-        "desktop_ui_present": desktop_ui_present,
-        "dashboard_api_present": dashboard_api_present,
         "pre_tool_call_blocking": blocking_status,
         "blueprints_indexed": bp_count,
         "bots_total": len(bots),
@@ -96,7 +92,6 @@ def cli(args: Any, settings: dict[str, Any] | None = None) -> int:
         print(f"DirtyForge Doctor — root: {report['hermes_root']}")
         print(f"  hermes CLI:        {report['hermes_cli']}")
         print(f"  omh plugin:        {'installed' if report['omh_plugin_installed'] else 'not found in root plugins'}")
-        print(f"  desktop UI:        {'present' if report['desktop_ui_present'] else 'missing'} (API: {'present' if report['dashboard_api_present'] else 'missing'})")
         print(f"  sentinel blocking: {report['pre_tool_call_blocking']}")
         print(f"  blueprints:        {report['blueprints_indexed']}")
         print(f"  bots provisioned:  {report['bots_total']} (policy drift: {report['policy_drifted_bots']}, tripped: {report['tripped_breakers']}, takeovers: {report['pending_takeovers']})")

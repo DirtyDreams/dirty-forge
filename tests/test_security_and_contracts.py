@@ -190,6 +190,9 @@ class SecurityAndContractTests(unittest.TestCase):
         doc = doctor.run_doctor()
         self.assertIn("pre_tool_call_blocking", doc)
         self.assertIsInstance(doc["warnings"], list)
+        # The UI is gone; a report that still names it is a report about a plugin that no longer exists.
+        self.assertNotIn("desktop_ui_present", doc)
+        self.assertNotIn("dashboard_api_present", doc)
 
 
 if __name__ == "__main__":
