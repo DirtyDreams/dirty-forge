@@ -121,6 +121,23 @@ class ProvisioningTests(unittest.TestCase):
         self.assertIn("outside the requested root", err)
         self.assertFalse(stray.exists(), "the stray profile it created was left behind")
 
+    def test_blueprint_router_matches_roles_not_letters(self) -> None:
+        from dirty_forge import blueprints
+
+        # A Polish role used to split into nik/stra/w, and one-letter tokens matched every
+        # blueprint, so every new Bot got a random role's voice in its SOUL.
+        self.assertEqual(blueprints.search("a", limit=3), [])
+        self.assertEqual(blueprints.search("i", limit=3), [])
+        self.assertEqual(sorted(blueprints._tokens("Strażnik serwisów")), ["serwisów", "strażnik"])
+
+        # Incidental word overlap is not a match: a wrong blueprint writes another role's voice.
+        for noise in ("kup mleko", "myj auto", "zupa pomidorowa", "Kubernetes cluster autoscaling"):
+            self.assertEqual(blueprints.search(noise, limit=3), [], f"{noise!r} matched something")
+
+        # …while a real role request still lands.
+        hits = blueprints.search("penetration test web app", limit=1)
+        self.assertEqual(hits[0]["slug"], "penetration-tester")
+
     def test_delete_goes_through_hermes_teardown_not_a_bare_rmtree(self) -> None:
         from unittest.mock import MagicMock, patch
 

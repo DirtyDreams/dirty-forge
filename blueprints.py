@@ -9,7 +9,13 @@ from typing import Any
 
 _DATA_PATH = Path(__file__).parent / "data" / "blueprints.json"
 _BLUEPRINTS: list[dict[str, Any]] | None = None
-_WORD_RE = re.compile(r"[a-z0-9][a-z0-9+.#_-]*", re.I)
+# Unicode words, not ASCII: "Strażnik" used to split into 4 tokens, and one-letter tokens matched
+# every blueprint, so each new Bot got a random role's sentence in its SOUL.
+_WORD_RE = re.compile(r"[^\W_][\w+.#-]*", re.UNICODE)
+_MIN_TOKEN = 3
+# A wrong blueprint is worse than none: it writes another role's voice into the Bot's SOUL. Real
+# matches score 5.5-15, incidental word overlap scores 1.5-4.6, so the floor sits between them.
+_MIN_SCORE = 5.0
 
 
 def _load() -> list[dict[str, Any]]:
@@ -23,7 +29,7 @@ def _load() -> list[dict[str, Any]]:
 
 
 def _tokens(text: str) -> set[str]:
-    return {t.lower() for t in _WORD_RE.findall(text or "")}
+    return {t.lower() for t in _WORD_RE.findall(text or "") if len(t) >= _MIN_TOKEN}
 
 
 def _score(bp: dict[str, Any], q_tokens: set[str], q_text: str) -> float:
@@ -65,7 +71,7 @@ def search(query: str, division: str = "", limit: int = 5) -> list[dict[str, Any
         if div_filter and bp.get("division", "").lower() != div_filter:
             continue
         s = _score(bp, q_tokens, q_text)
-        if s > 0:
+        if s >= _MIN_SCORE:
             scored.append((s, bp))
     scored.sort(key=lambda item: (-item[0], item[1]["slug"]))
     cap = max(1, min(int(limit or 5), 15))
