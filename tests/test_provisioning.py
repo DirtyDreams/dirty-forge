@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -105,6 +106,28 @@ class ProvisioningTests(unittest.TestCase):
     def test_kickoff_is_skipped_rather_than_sent_for_an_unresolvable_root(self) -> None:
         warning = forge._kickoff_check(self.root, "wren", {})
         self.assertIn("skipped", warning)
+
+    def test_kickoff_reports_a_bot_that_did_not_answer(self) -> None:
+        # The branch that only runs on a real root: exercise it by making the root resolve and
+        # stubbing the child process, so the "created but mute" case is not left to a manual run.
+        from unittest.mock import patch
+
+        failed = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="Error: no auth for model")
+        with patch.object(forge, "_hermes_root_resolves_to", return_value=True), \
+             patch.object(forge.shutil, "which", return_value="/usr/bin/hermes"), \
+             patch.object(forge.subprocess, "run", return_value=failed):
+            warning = forge._kickoff_check(self.root, "wren", {})
+        self.assertIn("kickoff failed", warning)
+        self.assertIn("no auth for model", warning)
+
+    def test_kickoff_is_silent_when_the_bot_answers(self) -> None:
+        from unittest.mock import patch
+
+        ok = subprocess.CompletedProcess(args=[], returncode=0, stdout="Jestem Wren.", stderr="")
+        with patch.object(forge, "_hermes_root_resolves_to", return_value=True), \
+             patch.object(forge.shutil, "which", return_value="/usr/bin/hermes"), \
+             patch.object(forge.subprocess, "run", return_value=ok):
+            self.assertEqual(forge._kickoff_check(self.root, "wren", {}), "")
 
 
 if __name__ == "__main__":
