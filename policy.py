@@ -56,15 +56,11 @@ def builder_profile_dir(root: Path) -> Path:
     """The profile this plugin is installed in — the Bot builder itself, whoever it is named.
 
     Read from HERMES_HOME rather than a hardcoded name: the builder is whichever profile runs the
-    plugin, and a deployment that renames it must keep working.
+    plugin. When the plugin is enabled at the root instead of in a profile, the root IS the builder —
+    falling back to `profiles/forge` there named a Bot nobody runs the plugin in.
     """
-    from .forge import default_root
-
     env_home = os.environ.get("HERMES_HOME", "").strip()
-    based = Path(env_home).expanduser() if env_home else Path.home() / ".hermes"
-    if based.parent.name == "profiles":
-        return based
-    return default_root() / "profiles" / "forge"
+    return Path(env_home).expanduser() if env_home else root
 
 
 def is_builder(root: Path, profile_dir: Path) -> bool:

@@ -26,7 +26,7 @@ CREATE_BOT = {
             "one_job": {"type": "string", "description": "Concrete definition of the Bot's single job and what 'done' looks like."},
             "soul_md": {"type": "string", "description": "Optional pre-compiled SOUL.md. If omitted, DirtyForge compiles it via metaprompt/blueprint."},
             "blueprint_slug": {"type": "string", "description": "Optional blueprint slug from dirty_forge_search_blueprints."},
-            "avatar_kind": {"type": "string", "description": "Avatar shape: sun, cloud, boxy, droplet, star, or leaf."},
+            "avatar_kind": {"type": "string", "description": "Avatar shape: sun, cloud, boxy, droplet, capsule, round, nub, organic, hexagon, or triangle."},
             "toolsets": {"type": "array", "items": {"type": "string"}, "description": "Extra toolsets beyond base (e.g. terminal, cronjob, image_gen)."},
             "memory": {"type": "array", "items": {"type": "string"}, "description": "Starter facts for MEMORY.md."},
             "routines": {

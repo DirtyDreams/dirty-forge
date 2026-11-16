@@ -83,12 +83,12 @@ class ProvisioningTests(unittest.TestCase):
         self.assertNotIn("Hermes", user_md)
 
     def test_ui_meta_carries_a_face_desktop_can_draw(self) -> None:
-        res = self._bot(avatar_kind="star", section_name="Research Team")
+        res = self._bot(avatar_kind="sun", section_name="Research Team")
         self.assertTrue(res["ok"], res.get("error"))
         prof = yaml.safe_load((Path(res["profile_dir"]) / "profile.yaml").read_text(encoding="utf-8"))
         ui = prof["ui_meta"]["hermes-bots"]
         self.assertEqual(ui["imageKind"], "shape")
-        self.assertEqual(ui["shape"], "blobatar::star")
+        self.assertEqual(ui["shape"], "blobatar::sun")
         self.assertEqual(ui["sectionId"], "research-team")
         self.assertNotIn("avatarKind", ui)
         self.assertGreaterEqual(prof["_ui_meta_revisions"]["hermes-bots"], 1)
@@ -148,6 +148,19 @@ class ProvisioningTests(unittest.TestCase):
             err = forge._provision_profile(self.root, "wren", "QA")
         self.assertIn("outside the requested root", err)
         self.assertFalse(stray.exists(), "the stray profile it created was left behind")
+
+    def test_avatar_kinds_are_the_silhouettes_desktop_can_draw(self) -> None:
+        """A kind Desktop does not know is written into ui_meta and then silently dropped.
+
+        `leaf` and `star` sat in AVATAR_KINDS and drew nothing; every silhouette in BLOB_KINDS
+        (avatar.tsx) should be reachable from here.
+        """
+        BLOB_KINDS = {
+            "round", "organic", "boxy", "capsule", "nub",
+            "cloud", "droplet", "hexagon", "sun", "triangle",
+        }
+        self.assertEqual(set(forge.AVATAR_KINDS) - BLOB_KINDS, set(), "Desktop cannot draw these")
+        self.assertEqual(BLOB_KINDS - set(forge.AVATAR_KINDS), set(), "unreachable silhouettes")
 
     def test_the_builder_is_judged_by_its_own_policy_not_the_bot_canon(self) -> None:
         """Forge writes every Bot's policy, so handing it the Bot canon makes it read that canon as
