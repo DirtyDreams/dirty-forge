@@ -58,22 +58,27 @@ def copy_bot(
         return {"ok": False, "error": f"source Bot '{source_name}' not found"}
 
     src_cfg = forge.load_yaml(src_dir / "config.yaml")
-    bots_meta = src_cfg.get("bots") if isinstance(src_cfg.get("bots"), dict) else {}
+    src_meta = forge.load_yaml(src_dir / "profile.yaml")
+    src_ui = (src_meta.get("ui_meta") or {}).get("hermes-bots") or {}
+    src_title = str(src_ui.get("title") or src_meta.get("display_name") or src_id)
     src_soul = (src_dir / "SOUL.md").read_text(encoding="utf-8", errors="ignore") if (src_dir / "SOUL.md").is_file() else ""
-    src_title = str(bots_meta.get("title") or src_id)
     updated_soul = src_soul.replace(src_title, new_display_name.strip()) if src_soul else ""
 
     spec: dict[str, Any] = {
         "hermes_root": str(r),
         "launch_profile": src_id,
         "display_name": new_display_name,
-        "role": role or str(bots_meta.get("role") or "Specialist"),
-        "avatar_kind": bots_meta.get("avatar_kind") or "boxy",
+        "role": role or str(src_meta.get("bot_title_role") or "Specialist"),
         "soul_md": updated_soul,
-        "toolsets": src_cfg.get("toolsets") or [],
+        # profile.yaml/`platform_toolsets` are the live shape; config.yaml:toolsets is what older
+        # Bots carry, so a copy of one still keeps its toolsets.
+        "toolsets": (src_cfg.get("platform_toolsets") or {}).get("cli") or src_cfg.get("toolsets") or [],
         "model": src_cfg.get("model") or {},
-        "omh_memory_mode": bots_meta.get("omh_memory_mode") or "auto-safe",
+        "omh_memory_mode": (src_meta.get("bot") or {}).get("omh_memory_mode") or "auto-safe",
     }
+    shape = str(src_ui.get("shape") or "")
+    if shape.rsplit(":", 1)[-1] in forge.AVATAR_KINDS:
+        spec["avatar_kind"] = shape.rsplit(":", 1)[-1]
     res = forge.forge_bot(spec, settings=settings)
     if not res.get("ok"):
         return res
@@ -141,7 +146,8 @@ def share_bot(
         return {"ok": True, "mode": "backup", "path": str(archive), "contains_chat_history": True}
 
     cfg = forge.load_yaml(pdir / "config.yaml")
-    bots_meta = cfg.get("bots") if isinstance(cfg.get("bots"), dict) else {}
+    meta = forge.load_yaml(pdir / "profile.yaml")
+    ui = (meta.get("ui_meta") or {}).get("hermes-bots") or {}
     soul_md = (pdir / "SOUL.md").read_text(encoding="utf-8", errors="ignore") if (pdir / "SOUL.md").is_file() else ""
     taught: dict[str, str] = {}
     if (pdir / "skills").is_dir():
@@ -161,11 +167,11 @@ def share_bot(
     bundle = {
         "format": "dirty-forge/template",
         "version": 1,
-        "display_name": bots_meta.get("title") or pid.capitalize(),
-        "role": bots_meta.get("role") or "Assistant",
-        "avatar_kind": bots_meta.get("avatar_kind") or "boxy",
-        "toolsets": cfg.get("toolsets") or [],
-        "omh_memory_mode": bots_meta.get("omh_memory_mode") or "auto-safe",
+        "display_name": ui.get("title") or meta.get("display_name") or pid.capitalize(),
+        "role": meta.get("bot_title_role") or "Assistant",
+        "avatar_kind": str(ui.get("shape") or "").rsplit(":", 1)[-1] or "boxy",
+        "toolsets": (cfg.get("platform_toolsets") or {}).get("cli") or cfg.get("toolsets") or [],
+        "omh_memory_mode": (meta.get("bot") or {}).get("omh_memory_mode") or "auto-safe",
         "soul_md": soul_md,
         "taught_skills": taught,
         "routines": routines,

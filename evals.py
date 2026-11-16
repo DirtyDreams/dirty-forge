@@ -109,7 +109,7 @@ def eval_bot(
 
     cfg = forge.load_yaml(pdir / "config.yaml")
     sentinel_pol = cfg.get("dirty-forge-sentinel") or {"approve_categories": ["send", "spend", "destroy"]}
-    enabled_toolsets = set(cfg.get("toolsets") or [])
+    enabled_toolsets = set((cfg.get("platform_toolsets") or {}).get("cli") or [])
     hermes_bin = shutil.which("hermes")
     timeout_sec = max(30.0, forge.core_tool_deadline(r) - forge.DEADLINE_MARGIN)
 
