@@ -91,14 +91,39 @@ class HistoryTests(unittest.TestCase):
         self.assertIn(first, snaps)
         self.assertIn(second, snaps)
 
-    def test_incomplete_snapshot_is_refused(self) -> None:
-        broken = self.pdir / "history" / "99999999T999999999999Z"
-        broken.mkdir(parents=True)
-        (broken / "SOUL.md").write_text("half a bot", encoding="utf-8")  # no manifest.json
-        res = forge.rollback_bot("wren", stamp=broken.name)
-        self.assertFalse(res["ok"])
-        self.assertIn("incomplete", res["error"])
+    def test_incomplete_snapshot_is_never_offered(self) -> None:
+        # A directory in history/ without a manifest is not one of our snapshots: it is neither
+        # restorable by name nor eligible to be "last" — and retention will not delete it.
+        real = forge.update_bot("wren", {"soul_append": "real edit"})["snapshot"]
+        stray = self.pdir / "history" / "99999999T999999999999Z"
+        stray.mkdir(parents=True)
+        (stray / "SOUL.md").write_text("half a bot", encoding="utf-8")  # no manifest.json
+        named = forge.rollback_bot("wren", stamp=stray.name)
+        self.assertFalse(named["ok"])
+        self.assertIn("not found", named["error"])
+        newest = forge.rollback_bot("wren")  # "last" is the real snapshot, not the stray directory
+        self.assertTrue(newest["ok"], newest.get("error"))
+        self.assertEqual(newest["from"], real)
         self.assertEqual((self.pdir / "SOUL.md").read_text(encoding="utf-8"), self.original_soul)
+
+    def test_damaged_snapshot_is_refused_rather_than_partially_restored(self) -> None:
+        made = forge.update_bot("wren", {"soul_append": "kept line"})
+        snap = self.pdir / "history" / made["snapshot"]
+        (snap / "config.yaml").unlink()  # the manifest still lists it
+        res = forge.rollback_bot("wren", stamp=made["snapshot"])
+        self.assertFalse(res["ok"])
+        self.assertIn("damaged", res["error"])
+        self.assertIn("config.yaml", res["error"])
+        self.assertIn("kept line", (self.pdir / "SOUL.md").read_text(encoding="utf-8"))
+
+    def test_retention_leaves_directories_it_did_not_create(self) -> None:
+        foreign = self.pdir / "history" / "operator-notes"
+        foreign.mkdir(parents=True)
+        (foreign / "note.md").write_text("keep me", encoding="utf-8")
+        for i in range(forge.HISTORY_KEEP + 3):
+            forge.snapshot_bot(self.pdir, reason=f"bulk {i}")
+        self.assertTrue(foreign.is_dir(), "retention deleted a directory it did not create")
+        self.assertEqual((foreign / "note.md").read_text(encoding="utf-8"), "keep me")
 
     def test_no_snapshots_is_a_readable_error(self) -> None:
         history = self.pdir / "history"
@@ -133,7 +158,9 @@ class HistoryTests(unittest.TestCase):
         for i in range(forge.HISTORY_KEEP + 4):
             forge.snapshot_bot(self.pdir, reason=f"bulk {i}")
         snaps = [d for d in (self.pdir / "history").iterdir() if d.is_dir()]
-        self.assertLessEqual(len(snaps), forge.HISTORY_KEEP)
+        self.assertEqual(len(snaps), forge.HISTORY_KEEP)  # not "at most": vacuously-empty would pass
+        newest = max(d.name for d in snaps)
+        self.assertTrue((self.pdir / "history" / newest / "manifest.json").is_file())
         self.assertTrue(all((d / "manifest.json").is_file() for d in snaps))
 
     def test_rollback_of_the_oldest_snapshot_at_the_retention_cap_still_restores(self) -> None:

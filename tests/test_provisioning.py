@@ -103,9 +103,23 @@ class ProvisioningTests(unittest.TestCase):
         # instead of creating the profile in the operator's real ~/.hermes/profiles.
         self.assertEqual(forge._provision_profile(self.root, "wren", "QA"), "skip")
 
+    def test_profile_landing_outside_the_root_is_removed_not_orphaned(self) -> None:
+        from unittest.mock import patch
+
+        stray = Path(self._tmp.name) / "elsewhere" / "wren"
+        stray.mkdir(parents=True)
+        (stray / "config.yaml").write_text("model: {}\n", encoding="utf-8")
+        fake = type("R", (), {"path": stray, "warnings": []})()
+        with patch.object(forge, "_hermes_root_resolves_to", return_value=True), \
+             patch("hermes_cli.profile_provision.provision_profile", return_value=fake):
+            err = forge._provision_profile(self.root, "wren", "QA")
+        self.assertIn("outside the requested root", err)
+        self.assertFalse(stray.exists(), "the stray profile it created was left behind")
+
     def test_kickoff_is_skipped_rather_than_sent_for_an_unresolvable_root(self) -> None:
         warning = forge._kickoff_check(self.root, "wren", {})
-        self.assertIn("skipped", warning)
+        # The root gate specifically: the PATH branch says "not on PATH", which is a different reason.
+        self.assertIn("not one Hermes resolves", warning)
 
     def test_kickoff_reports_a_bot_that_did_not_answer(self) -> None:
         # The branch that only runs on a real root: exercise it by making the root resolve and

@@ -296,7 +296,11 @@ def _provision_profile(root: Path, pid: str, description: str) -> str:
     finally:
         sys.path[:0] = parked
     if result.path.resolve() != profile_dir(root, pid).resolve():
-        return f"profile landed outside the requested root ({result.path})"
+        # Hermes made it somewhere else (a root it resolved differently). Leaving it there would be
+        # an orphan profile the caller never reports and cannot find; this call created it, so this
+        # call removes it.
+        shutil.rmtree(result.path, ignore_errors=True)
+        return f"profile landed outside the requested root ({result.path}) and was removed"
     return ""
 
 
@@ -750,7 +754,11 @@ def snapshot_bot(pdir: Path, reason: str = "") -> dict[str, Any]:
         encoding="utf-8",
     )
     history = pdir / "history"
-    snaps = sorted((d for d in history.iterdir() if d.is_dir()), reverse=True)
+    # Only our own snapshots are candidates: a directory in here without a manifest was put there by
+    # someone else, and retention must never destroy what it did not create.
+    snaps = sorted(
+        (d for d in history.iterdir() if d.is_dir() and (d / "manifest.json").is_file()), reverse=True
+    )
     for stale in snaps[HISTORY_KEEP:]:
         shutil.rmtree(stale, ignore_errors=True)
     return {"stamp": target.name, "files": copied}
@@ -786,7 +794,9 @@ def rollback_bot(name: str, stamp: str = "last", root: Path | None = None) -> di
     history = pdir / "history"
     if not history.is_dir():
         return {"ok": False, "error": f"no snapshots for '{pid_or_err}' — nothing to roll back"}
-    snaps = sorted((d for d in history.iterdir() if d.is_dir()), reverse=True)
+    snaps = sorted(
+        (d for d in history.iterdir() if d.is_dir() and (d / "manifest.json").is_file()), reverse=True
+    )
     if not snaps:
         return {"ok": False, "error": f"no snapshots for '{pid_or_err}' — nothing to roll back"}
     if stamp and stamp != "last":
@@ -812,8 +822,14 @@ def rollback_bot(name: str, stamp: str = "last", root: Path | None = None) -> di
     # Read the payload BEFORE the undo snapshot: that snapshot applies retention, and when history
     # is at the cap the oldest one — this very target — is what retention deletes.
     payload = {f: (target / f).read_bytes() for f in files if (target / f).is_file()}
-    if not payload:
-        return {"ok": False, "error": f"snapshot '{target.name}' holds no readable files"}
+    missing = [f for f in files if f not in payload]
+    if missing:
+        # A manifest naming a file that is gone means the snapshot is damaged; restoring the rest
+        # would leave the Bot in a state neither the operator nor Hermes ever chose.
+        return {
+            "ok": False,
+            "error": f"snapshot '{target.name}' is damaged (missing: {', '.join(missing)}) — refusing a partial restore",
+        }
     undo = snapshot_bot(pdir, reason=f"before rollback to {target.name}")
     restored: list[str] = []
     for filename, blob in payload.items():
